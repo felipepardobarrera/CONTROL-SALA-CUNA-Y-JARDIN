@@ -1161,6 +1161,57 @@ td:last-child {
   }
 }
 
+.projection-visibility-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+
+.projection-visibility-filter legend {
+  width: 100%;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.projection-visibility-filter label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.projection-visibility-filter input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--primary);
+}
+
+.projection-visibility-filter small {
+  color: var(--muted);
+}
+
+.projection-filter-empty {
+  padding: 20px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  text-align: center;
+}
+
 /* Version 2: navegación y superficie de trabajo */
 .sidebar { background: var(--sidebar); }
 

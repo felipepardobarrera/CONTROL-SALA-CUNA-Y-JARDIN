@@ -166,6 +166,7 @@ applyBudgetOverrides(loadBudgets());
 let sharedDataReady = false;
 let sharedDataTimer = null;
 let knownProjectionCleanupPending = false;
+let projectionVisibleInitiatives = new Set(INITIATIVES.map((initiative) => initiative.id));
 let pendingProviderUpload = null;
 let pendingExpenseAttachmentId = null;
 let providerExpenseCache = new Map();
@@ -2464,7 +2465,13 @@ function renderProjectionGrid() {
     return { initiative, providers: providersForInitiative, total };
   });
 
-  container.innerHTML = groups.map(({ initiative, providers, total }, index) => {
+  const visibleGroups = groups.filter(({ initiative }) => projectionVisibleInitiatives.has(initiative.id));
+  if (!visibleGroups.length) {
+    container.innerHTML = `<div class="projection-filter-empty">Selecciona al menos una iniciativa para visualizar su matriz.</div>`;
+    return;
+  }
+
+  container.innerHTML = visibleGroups.map(({ initiative, providers, total }, index) => {
     const isOpen = previousSections.length ? openInitiatives.has(initiative.id) : index === 0;
     return `
     <details class="projection-grid-section" data-initiative-id="${initiative.id}" ${isOpen ? "open" : ""}>
@@ -3480,6 +3487,15 @@ document.querySelector("#projectionGridSections").addEventListener("toggle", (ev
   });
   renderProjectionGrid();
 }, true);
+
+document.querySelector(".projection-visibility-filter").addEventListener("change", (event) => {
+  const checkbox = event.target.closest('input[name="projectionVisibility"]');
+  if (!checkbox) return;
+  projectionVisibleInitiatives = new Set(
+    [...document.querySelectorAll('input[name="projectionVisibility"]:checked')].map((input) => input.value)
+  );
+  renderProjectionGrid();
+});
 
 document.querySelector("#bulkDocumentRows").addEventListener("click", (event) => {
   const button = event.target.closest("button");
