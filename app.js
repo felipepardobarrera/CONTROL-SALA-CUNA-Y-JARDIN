@@ -3135,6 +3135,81 @@ function exportCsv() {
   URL.revokeObjectURL(link.href);
 }
 
+function excelHtmlEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function exportProjectionExcel() {
+  const projectionProviders = visibleProjectionProviders();
+  const summaryRows = INITIATIVES.map((initiative) => {
+    const budget = totalBudget(initiative);
+    const real = expenseTotal(initiative.id);
+    const projected = projectedTotal(initiative.id);
+    return `<tr>
+      <td>${excelHtmlEscape(initiative.shortName)}</td>
+      <td class="money">${budget}</td>
+      <td class="money real">${real}</td>
+      <td class="money projected">${projected}</td>
+      <td class="money">${real + projected}</td>
+      <td class="money">${budget - real - projected}</td>
+    </tr>`;
+  }).join("");
+
+  const initiativeTables = INITIATIVES.map((initiative) => {
+    const initiativeProviders = projectionProviders.filter((provider) => providerInitiative(provider) === initiative.id);
+    const rows = initiativeProviders.map((provider) => {
+      let realTotal = 0;
+      let projectedTotalValue = 0;
+      const monthCells = MONTHS.map((_, month) => {
+        const realPaid = providerMonthPaid(provider, month);
+        const manualPaid = projectionCellIsPaid(provider, month) && !realPaid;
+        const inRange = providerMonthIsWithinPayments(provider, month);
+        const amount = realPaid ? providerMonthPaidAmount(provider, month) : projectionGridValue(provider, month);
+        if (realPaid || manualPaid) realTotal += amount;
+        else if (inRange) projectedTotalValue += amount;
+        const cellClass = realPaid ? "real" : manualPaid ? "manual" : amount > 0 && inRange ? "projected" : "";
+        return `<td class="money ${cellClass}">${inRange || realPaid ? amount || "" : ""}</td>`;
+      }).join("");
+      return `<tr>
+        <td>${excelHtmlEscape(provider.name)}</td>
+        <td>${excelHtmlEscape(provider.employee || "")}</td>
+        ${monthCells}
+        <td class="money real">${realTotal}</td>
+        <td class="money projected">${projectedTotalValue}</td>
+        <td class="money">${realTotal + projectedTotalValue}</td>
+      </tr>`;
+    }).join("");
+    return `
+      <h2>${excelHtmlEscape(initiative.shortName)}</h2>
+      <table>
+        <thead><tr><th>Proveedor/persona</th><th>Responsable</th>${MONTHS.map((month) => `<th>${excelHtmlEscape(month)}</th>`).join("")}<th>Total real</th><th>Total proyectado</th><th>Total combinado</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="17">Sin proveedores registrados</td></tr>`}</tbody>
+      </table>`;
+  }).join("");
+
+  const workbook = `<!doctype html><html><head><meta charset="utf-8"><style>
+    body{font-family:Calibri,Arial,sans-serif;color:#172433} h1{font-size:20pt} h2{margin-top:24px;font-size:15pt}
+    table{border-collapse:collapse;margin-bottom:18px} th,td{border:1px solid #aab7c2;padding:6px 8px;vertical-align:top} th{background:#233f56;color:#fff;font-weight:bold}
+    .money{mso-number-format:'#,##0';text-align:right}.real{background:#dcefe8}.projected{background:#fbe3b5}.manual{background:#dce8f5}
+  </style></head><body>
+    <h1>Proyeccion presupuestaria 2026</h1>
+    <p>Verde: gasto real. Naranjo: proyectado. Azul: pagado manualmente.</p>
+    <h2>Resumen por iniciativa</h2>
+    <table><thead><tr><th>Iniciativa</th><th>Presupuesto</th><th>Gasto real</th><th>Proyectado</th><th>Cierre estimado</th><th>Saldo estimado</th></tr></thead><tbody>${summaryRows}</tbody></table>
+    ${initiativeTables}
+  </body></html>`;
+  const blob = new Blob([`﻿${workbook}`], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `proyeccion_presupuestaria_2026_${new Date().toISOString().slice(0, 10)}.xls`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function backupData() {
   const payload = {
     createdAt: new Date().toISOString(),
@@ -3747,6 +3822,7 @@ document.querySelector("#restoreBudgetBase")?.addEventListener("click", () => {
   renderAll();
 });
 document.querySelector("#exportCsv").addEventListener("click", exportCsv);
+document.querySelector("#downloadProjectionExcel").addEventListener("click", exportProjectionExcel);
 document.querySelector("#syncSharedData").addEventListener("click", async () => {
   captureProjectionGridFromDom();
   sharedDataReady = true;
