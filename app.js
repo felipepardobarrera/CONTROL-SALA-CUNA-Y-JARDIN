@@ -167,6 +167,7 @@ let sharedDataReady = false;
 let sharedDataTimer = null;
 let pendingProviderUpload = null;
 let pendingExpenseAttachmentId = null;
+let providerExpenseCache = new Map();
 let expenses = loadExpenses();
 let projections = loadProjections();
 let projectionGrid = loadProjectionGrid();
@@ -657,18 +658,6 @@ async function loadSharedData() {
       applySharedData(window.__CONTROL_SHARED_DATA__);
       return;
     }
-    if (typeof XMLHttpRequest !== "undefined") {
-      const request = new XMLHttpRequest();
-      request.open("GET", "/api/shared-data", false);
-      request.send(null);
-      if (request.status >= 200 && request.status < 300) {
-        const result = JSON.parse(request.responseText);
-        if (result.exists && result.data) {
-          applySharedData(result.data);
-          return;
-        }
-      }
-    }
     const response = await fetch("/api/shared-data");
     if (!response.ok) {
       await loadStaticSharedData();
@@ -759,6 +748,10 @@ function byInitiative(id) {
   return INITIATIVES.find((item) => item.id === id);
 }
 
+function validInitiativeFilter(value) {
+  return value === "all" || byInitiative(value) ? value : "all";
+}
+
 function initiativeFromProviderType(type) {
   const normalized = String(type || "").toLowerCase();
   if (normalized.includes("monto")) return "monto-directo";
@@ -843,8 +836,12 @@ function providerMatchesExpense(provider, expense) {
 }
 
 function expensesForProvider(provider) {
+  const cacheKey = provider.id || providerMergeKey(provider);
+  if (providerExpenseCache.has(cacheKey)) return providerExpenseCache.get(cacheKey);
   const uniqueExpenses = uniqueArrayBy(expenses, expenseMergeKey);
-  return uniqueExpenses.filter((expense) => providerMatchesExpense(provider, expense));
+  const matched = uniqueExpenses.filter((expense) => providerMatchesExpense(provider, expense));
+  providerExpenseCache.set(cacheKey, matched);
+  return matched;
 }
 
 function expenseTotal(filterId = "all") {
@@ -1255,7 +1252,7 @@ function renderInitiativeCards() {
 }
 
 function renderChart() {
-  const filterId = document.querySelector("#initiativeFilter").value;
+  const filterId = validInitiativeFilter(document.querySelector("#initiativeFilter").value);
   const data = filterId === "all"
     ? INITIATIVES.map((item) => ({ label: item.shortName, budget: totalBudget(item), spent: expenseTotal(item.id), projected: projectedTotal(item.id) }))
     : [byInitiative(filterId)].map((item) => ({ label: item.shortName, budget: totalBudget(item), spent: expenseTotal(item.id), projected: projectedTotal(item.id) }));
@@ -1263,7 +1260,7 @@ function renderChart() {
 }
 
 function renderMonthlyComparison() {
-  const filterId = document.querySelector("#monthlyComparisonFilter").value;
+  const filterId = validInitiativeFilter(document.querySelector("#monthlyComparisonFilter").value);
   const paid = monthlyExpense(filterId);
   const budgetMonthly = monthlyBudget(filterId);
   const annualPaid = paid.reduce((sum, value) => sum + value, 0);
@@ -2490,7 +2487,7 @@ function renderProjectionQuickForm() {
 }
 
 function renderProjectionInitiativeOverview() {
-  const filterId = document.querySelector("#projectionInitiativeFilter").value;
+  const filterId = validInitiativeFilter(document.querySelector("#projectionInitiativeFilter").value);
   const initiatives = filterId === "all" ? INITIATIVES : [byInitiative(filterId)];
   const data = initiatives.map((item) => ({
     label: item.shortName,
@@ -3025,6 +3022,7 @@ function renderBudgetBase() {
 }
 
 function renderAll() {
+  providerExpenseCache = new Map();
   renderKpis();
   renderInitiativeCards();
   renderChart();
