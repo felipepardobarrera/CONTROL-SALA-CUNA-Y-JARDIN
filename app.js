@@ -443,6 +443,28 @@ function cleanOrphanedProviderData() {
   noPaymentGrid = Object.fromEntries(Object.entries(noPaymentGrid || {}).filter(keepActiveProviderKey));
 }
 
+function removeKnownInvalidProviders() {
+  const invalidProviders = providers.filter((provider) => {
+    const name = compactText(readableText(provider.name || ""));
+    const employee = compactText(readableText(provider.employee || ""));
+    return name === "vtmadministracionyserviciosspa" && employee === "99106";
+  });
+  if (!invalidProviders.length) return false;
+
+  const providerIds = invalidProviders.map((provider) => provider.id).filter(Boolean);
+  const invalidNames = new Set(invalidProviders.map((provider) => compactText(provider.name)));
+  providers = providers.filter((provider) => !invalidProviders.includes(provider));
+  projections = projections.filter((item) =>
+    !providerIds.includes(item.providerId)
+    && !invalidNames.has(compactText(item.provider || "")));
+  projectionGrid = withoutProviderKeys(projectionGrid, providerIds);
+  projectionPaidGrid = withoutProviderKeys(projectionPaidGrid, providerIds);
+  noPaymentGrid = withoutProviderKeys(noPaymentGrid, providerIds);
+  providerIds.forEach((providerId) => { deletedProviderIds[providerId] = true; });
+  cleanOrphanedProviderData();
+  return true;
+}
+
 async function deleteProviderEverywhere(provider) {
   const linkedExpenses = uniqueArrayBy(expenses, expenseMergeKey).filter((expense) => providerMatchesExpense(provider, expense));
   const expenseCount = linkedExpenses.length;
@@ -569,6 +591,7 @@ function applySharedData(data) {
     ? uniqueArrayBy(sharedProviders, providerMergeKey).map(normalizeProviderDates)
     : DEFAULT_PROVIDERS.map(normalizeProviderDates))
     .filter((provider) => !deletedProviderIds[provider.id]);
+  removeKnownInvalidProviders();
   cleanOrphanedProviderData();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
   localStorage.setItem(PROJECTION_KEY, JSON.stringify(projections));
@@ -3691,6 +3714,14 @@ document.querySelector("#resetDemo").addEventListener("click", () => {
 async function initializeApp() {
   await loadSharedData();
   sharedDataReady = true;
+  if (removeKnownInvalidProviders()) {
+    saveProviders();
+    saveProjections();
+    saveProjectionGrid();
+    saveProjectionPaidGrid();
+    saveNoPaymentGrid();
+    saveDeletedProviderIds();
+  }
   migrateLegacyProjectionsToGrid();
   fillSelectors();
   renderProviderF30Fields();
