@@ -166,7 +166,7 @@ applyBudgetOverrides(loadBudgets());
 let sharedDataReady = false;
 let sharedDataTimer = null;
 let knownProjectionCleanupPending = false;
-let projectionVisibleInitiatives = new Set(INITIATIVES.map((initiative) => initiative.id));
+let projectionHiddenProviderIds = new Set();
 let pendingProviderUpload = null;
 let pendingExpenseAttachmentId = null;
 let providerExpenseCache = new Map();
@@ -2445,7 +2445,7 @@ function renderProjectionGrid() {
       `;
     }).join("");
     return `
-      <tr>
+      <tr data-provider-id="${provider.id}" ${projectionHiddenProviderIds.has(provider.id) ? "hidden" : ""}>
         <td><strong>${provider.name}</strong><br><small>${initiative?.shortName || ""}${provider.employee ? ` Â· ${provider.employee}` : ""}</small></td>
         ${cells}
         <td><strong>${money.format(rowTotal)}</strong></td>
@@ -2465,14 +2465,15 @@ function renderProjectionGrid() {
     return { initiative, providers: providersForInitiative, total };
   });
 
-  const visibleGroups = groups.filter(({ initiative }) => projectionVisibleInitiatives.has(initiative.id));
-  if (!visibleGroups.length) {
-    container.innerHTML = `<div class="projection-filter-empty">Selecciona al menos una iniciativa para visualizar su matriz.</div>`;
-    return;
-  }
-
-  container.innerHTML = visibleGroups.map(({ initiative, providers, total }, index) => {
+  container.innerHTML = groups.map(({ initiative, providers, total }, index) => {
     const isOpen = previousSections.length ? openInitiatives.has(initiative.id) : index === 0;
+    const visibleProviders = providers.filter((provider) => !projectionHiddenProviderIds.has(provider.id));
+    const providerOptions = providers.map((provider) => `
+      <label class="projection-provider-option">
+        <input class="projection-provider-visibility" type="checkbox" data-provider-id="${provider.id}" ${projectionHiddenProviderIds.has(provider.id) ? "" : "checked"} />
+        <span>${provider.name}${provider.employee ? `<small>${provider.employee}</small>` : ""}</span>
+      </label>
+    `).join("");
     return `
     <details class="projection-grid-section" data-initiative-id="${initiative.id}" ${isOpen ? "open" : ""}>
       <summary>
@@ -2482,6 +2483,18 @@ function renderProjectionGrid() {
         </span>
         <b>${money.format(total)}</b>
       </summary>
+      <div class="projection-provider-filter">
+        <details>
+          <summary>Filtrar instituciones <span data-visible-count>${visibleProviders.length} de ${providers.length}</span></summary>
+          <div class="projection-provider-options">
+            <div class="projection-provider-filter-actions">
+              <button class="mini-btn" type="button" data-action="show-all-providers">Mostrar todas</button>
+              <button class="mini-btn" type="button" data-action="hide-all-providers">Ocultar todas</button>
+            </div>
+            ${providerOptions || `<small>No hay instituciones en esta iniciativa.</small>`}
+          </div>
+        </details>
+      </div>
       <div class="table-wrap compact-table projection-grid-wrap">
         <table>
           <thead>
@@ -3488,13 +3501,34 @@ document.querySelector("#projectionGridSections").addEventListener("toggle", (ev
   renderProjectionGrid();
 }, true);
 
-document.querySelector(".projection-visibility-filter").addEventListener("change", (event) => {
-  const checkbox = event.target.closest('input[name="projectionVisibility"]');
+function updateProjectionProviderVisibility(section) {
+  const checkboxes = [...section.querySelectorAll(".projection-provider-visibility")];
+  checkboxes.forEach((checkbox) => {
+    if (checkbox.checked) projectionHiddenProviderIds.delete(checkbox.dataset.providerId);
+    else projectionHiddenProviderIds.add(checkbox.dataset.providerId);
+  });
+  section.querySelectorAll("tbody tr[data-provider-id]").forEach((row) => {
+    row.hidden = projectionHiddenProviderIds.has(row.dataset.providerId);
+  });
+  const counter = section.querySelector("[data-visible-count]");
+  if (counter) counter.textContent = `${checkboxes.filter((checkbox) => checkbox.checked).length} de ${checkboxes.length}`;
+}
+
+document.querySelector("#projectionGridSections").addEventListener("change", (event) => {
+  const checkbox = event.target.closest(".projection-provider-visibility");
   if (!checkbox) return;
-  projectionVisibleInitiatives = new Set(
-    [...document.querySelectorAll('input[name="projectionVisibility"]:checked')].map((input) => input.value)
-  );
-  renderProjectionGrid();
+  updateProjectionProviderVisibility(checkbox.closest(".projection-grid-section"));
+});
+
+document.querySelector("#projectionGridSections").addEventListener("click", (event) => {
+  const button = event.target.closest('[data-action="show-all-providers"], [data-action="hide-all-providers"]');
+  if (!button) return;
+  const section = button.closest(".projection-grid-section");
+  const checked = button.dataset.action === "show-all-providers";
+  section.querySelectorAll(".projection-provider-visibility").forEach((checkbox) => {
+    checkbox.checked = checked;
+  });
+  updateProjectionProviderVisibility(section);
 });
 
 document.querySelector("#bulkDocumentRows").addEventListener("click", (event) => {
