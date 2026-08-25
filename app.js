@@ -2436,8 +2436,10 @@ function renderProjectionGrid() {
     return { initiative, providers: providersForInitiative, total };
   });
 
-  container.innerHTML = groups.map(({ initiative, providers, total }, index) => `
-    <details class="projection-grid-section" data-initiative-id="${initiative.id}" ${previousSections.length ? (openInitiatives.has(initiative.id) ? "open" : "") : (index === 0 ? "open" : "")}>
+  container.innerHTML = groups.map(({ initiative, providers, total }, index) => {
+    const isOpen = previousSections.length ? openInitiatives.has(initiative.id) : index === 0;
+    return `
+    <details class="projection-grid-section" data-initiative-id="${initiative.id}" ${isOpen ? "open" : ""}>
       <summary>
         <span>
           <strong>${initiative.shortName}</strong>
@@ -2454,11 +2456,12 @@ function renderProjectionGrid() {
               <th>Total proyectado</th>
             </tr>
           </thead>
-          <tbody>${renderRows(providers)}</tbody>
+          <tbody>${isOpen ? renderRows(providers) : ""}</tbody>
         </table>
       </div>
     </details>
-  `).join("");
+  `;
+  }).join("");
 
   [...container.querySelectorAll(".projection-grid-section")].forEach((section) => {
     const wrap = section.querySelector(".projection-grid-wrap");
@@ -3042,6 +3045,15 @@ function renderAll() {
   cleanVisibleText();
 }
 
+function renderProjectionViews() {
+  renderKpis();
+  renderProjectionGrid();
+  renderProjectionSummary();
+  renderProjectionInitiativeOverview();
+  renderSummary();
+  cleanVisibleText();
+}
+
 function exportCsv() {
   const headers = ["Tipo", "Mes/Periodo", "Iniciativa", "Documento/Escenario", "Fecha", "Proveedor/persona", "Monto", "Observacion"];
   const expenseData = expenses.map((item) => [
@@ -3417,7 +3429,7 @@ document.querySelector("#projectionGridSections").addEventListener("change", (ev
     if (checkbox.closest("td")?.dataset.realPaid === "true") return;
     projectionPaidGrid[key] = checkbox.checked;
     saveProjectionPaidGrid();
-    renderAll();
+    renderProjectionViews();
     return;
   }
 
@@ -3429,8 +3441,17 @@ document.querySelector("#projectionGridSections").addEventListener("change", (ev
   if (value > 0) projectionGrid[key] = value;
   else delete projectionGrid[key];
   saveProjectionGrid();
-  renderAll();
+  renderProjectionViews();
 });
+
+document.querySelector("#projectionGridSections").addEventListener("toggle", (event) => {
+  const section = event.target.closest(".projection-grid-section");
+  if (!section?.open || section.querySelector(".projection-month-input")) return;
+  section.parentElement.querySelectorAll(".projection-grid-section[open]").forEach((otherSection) => {
+    if (otherSection !== section) otherSection.open = false;
+  });
+  renderProjectionGrid();
+}, true);
 
 document.querySelector("#bulkDocumentRows").addEventListener("click", (event) => {
   const button = event.target.closest("button");
