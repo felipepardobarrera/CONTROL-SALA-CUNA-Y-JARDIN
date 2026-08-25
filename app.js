@@ -165,6 +165,7 @@ applyBudgetOverrides(loadBudgets());
 
 let sharedDataReady = false;
 let sharedDataTimer = null;
+let knownProjectionCleanupPending = false;
 let pendingProviderUpload = null;
 let pendingExpenseAttachmentId = null;
 let providerExpenseCache = new Map();
@@ -466,6 +467,34 @@ function removeKnownInvalidProviders() {
   return true;
 }
 
+function clearKnownIncorrectProjectionData() {
+  const affectedProviders = providers.filter((provider) =>
+    compactText(provider.name) === "ksazucarcandiavtm"
+    && compactText(provider.employee) === "karensalinas");
+  if (!affectedProviders.length) return false;
+
+  const providerIds = affectedProviders.map((provider) => provider.id).filter(Boolean);
+  const providerNames = new Set(affectedProviders.flatMap((provider) => [
+    compactText(provider.name),
+    compactText(provider.employee),
+  ]));
+  const previousProjectionCount = projections.length;
+  const previousGridCount = Object.keys(projectionGrid || {}).length;
+  const previousPaidCount = Object.keys(projectionPaidGrid || {}).length;
+
+  projections = projections.filter((item) =>
+    !providerIds.includes(item.providerId)
+    && !providerNames.has(compactText(item.provider || "")));
+  projectionGrid = withoutProviderKeys(projectionGrid, providerIds);
+  projectionPaidGrid = withoutProviderKeys(projectionPaidGrid, providerIds);
+
+  const changed = projections.length !== previousProjectionCount
+    || Object.keys(projectionGrid).length !== previousGridCount
+    || Object.keys(projectionPaidGrid).length !== previousPaidCount;
+  if (changed) knownProjectionCleanupPending = true;
+  return changed;
+}
+
 async function deleteProviderEverywhere(provider) {
   const linkedExpenses = uniqueArrayBy(expenses, expenseMergeKey).filter((expense) => providerMatchesExpense(provider, expense));
   const expenseCount = linkedExpenses.length;
@@ -593,6 +622,7 @@ function applySharedData(data) {
     : DEFAULT_PROVIDERS.map(normalizeProviderDates))
     .filter((provider) => !deletedProviderIds[provider.id]);
   removeKnownInvalidProviders();
+  clearKnownIncorrectProjectionData();
   cleanOrphanedProviderData();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
   localStorage.setItem(PROJECTION_KEY, JSON.stringify(projections));
@@ -792,25 +822,23 @@ function vtmExpenseOwner(expense) {
   const notes = compactText(expense.notes);
   const documentText = `${vendor}${notes}`;
 
-  const poOwner = candidates.find((candidate) => {
+  const scoredCandidates = candidates.map((candidate) => {
+    const name = compactText(candidate.name);
+    const baseName = name.replace(/vtm/g, "");
+    const employee = compactText(candidate.employee);
     const po = compactText(candidate.po);
-    return po && (vendor.includes(po) || notes.includes(po));
-  });
-  if (poOwner) return poOwner;
-
-  const scoredPeople = candidates.map((candidate) => {
-    const employee = normalizeText(readableText(candidate.employee || "")).toLowerCase();
-    const employeeCompact = compactText(employee);
-    const words = [...new Set(employee.split(/[^a-z0-9]+/).filter((word) => word.length >= 4))];
-    const fullMatch = employeeCompact && documentText.includes(employeeCompact);
-    const matchedWords = words.filter((word) => documentText.includes(word));
-    return { candidate, score: fullMatch ? 100 + matchedWords.length : matchedWords.length };
+    const poIsUnique = po && candidates.filter((item) => compactText(item.po) === po).length === 1;
+    const nameMatches = name === vendor
+      || (baseName.length >= 6 && (vendor.includes(baseName) || baseName.includes(vendor)));
+    const employeeMatches = employee.length >= 6 && documentText.includes(employee);
+    const poMatches = poIsUnique && (vendor.includes(po) || notes.includes(po));
+    const score = (nameMatches ? 300 : 0) + (employeeMatches ? 200 : 0) + (poMatches ? 100 : 0);
+    return { candidate, score };
   }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score);
-  if (scoredPeople.length && (scoredPeople.length === 1 || scoredPeople[0].score > scoredPeople[1].score)) {
-    return scoredPeople[0].candidate;
-  }
 
-  return candidates.find((candidate) => compactText(candidate.name) === vendor) || null;
+  if (!scoredCandidates.length) return null;
+  if (scoredCandidates.length > 1 && scoredCandidates[0].score === scoredCandidates[1].score) return null;
+  return scoredCandidates[0].candidate;
 }
 
 function providerMatchesExpense(provider, expense) {
@@ -3733,6 +3761,12 @@ async function initializeApp() {
     saveProjectionPaidGrid();
     saveNoPaymentGrid();
     saveDeletedProviderIds();
+  }
+  if (clearKnownIncorrectProjectionData() || knownProjectionCleanupPending) {
+    saveProjections();
+    saveProjectionGrid();
+    saveProjectionPaidGrid();
+    knownProjectionCleanupPending = false;
   }
   migrateLegacyProjectionsToGrid();
   fillSelectors();
