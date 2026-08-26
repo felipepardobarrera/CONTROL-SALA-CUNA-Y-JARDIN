@@ -165,7 +165,6 @@ applyBudgetOverrides(loadBudgets());
 
 let sharedDataReady = false;
 let sharedDataTimer = null;
-let knownProjectionCleanupPending = false;
 let projectionHiddenProviderIds = new Set();
 let pendingProviderUpload = null;
 let pendingExpenseAttachmentId = null;
@@ -468,34 +467,6 @@ function removeKnownInvalidProviders() {
   return true;
 }
 
-function clearKnownIncorrectProjectionData() {
-  const affectedProviders = providers.filter((provider) =>
-    compactText(provider.name) === "ksazucarcandiavtm"
-    && compactText(provider.employee) === "karensalinas");
-  if (!affectedProviders.length) return false;
-
-  const providerIds = affectedProviders.map((provider) => provider.id).filter(Boolean);
-  const providerNames = new Set(affectedProviders.flatMap((provider) => [
-    compactText(provider.name),
-    compactText(provider.employee),
-  ]));
-  const previousProjectionCount = projections.length;
-  const previousGridCount = Object.keys(projectionGrid || {}).length;
-  const previousPaidCount = Object.keys(projectionPaidGrid || {}).length;
-
-  projections = projections.filter((item) =>
-    !providerIds.includes(item.providerId)
-    && !providerNames.has(compactText(item.provider || "")));
-  projectionGrid = withoutProviderKeys(projectionGrid, providerIds);
-  projectionPaidGrid = withoutProviderKeys(projectionPaidGrid, providerIds);
-
-  const changed = projections.length !== previousProjectionCount
-    || Object.keys(projectionGrid).length !== previousGridCount
-    || Object.keys(projectionPaidGrid).length !== previousPaidCount;
-  if (changed) knownProjectionCleanupPending = true;
-  return changed;
-}
-
 async function deleteProviderEverywhere(provider) {
   const linkedExpenses = uniqueArrayBy(expenses, expenseMergeKey).filter((expense) => providerMatchesExpense(provider, expense));
   const expenseCount = linkedExpenses.length;
@@ -623,7 +594,6 @@ function applySharedData(data) {
     : DEFAULT_PROVIDERS.map(normalizeProviderDates))
     .filter((provider) => !deletedProviderIds[provider.id]);
   removeKnownInvalidProviders();
-  clearKnownIncorrectProjectionData();
   cleanOrphanedProviderData();
   localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
   localStorage.setItem(PROJECTION_KEY, JSON.stringify(projections));
@@ -3143,7 +3113,7 @@ function excelHtmlEscape(value) {
     .replaceAll('"', "&quot;");
 }
 
-function exportProjectionExcel() {
+function exportProjectionLegacyExcel() {
   const projectionProviders = visibleProjectionProviders();
   const summaryRows = INITIATIVES.map((initiative) => {
     const budget = totalBudget(initiative);
@@ -3208,6 +3178,219 @@ function exportProjectionExcel() {
   link.download = `proyeccion_presupuestaria_2026_${new Date().toISOString().slice(0, 10)}.xls`;
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+function xlsxColumnName(index) {
+  let name = "";
+  for (let value = index + 1; value > 0; value = Math.floor((value - 1) / 26)) {
+    name = String.fromCharCode(65 + ((value - 1) % 26)) + name;
+  }
+  return name;
+}
+
+function xlsxCellXml(cell, rowIndex, columnIndex) {
+  if (cell == null || cell.value == null || cell.value === "") return "";
+  const reference = `${xlsxColumnName(columnIndex)}${rowIndex + 1}`;
+  const style = cell.style ? ` s="${cell.style}"` : "";
+  if (typeof cell.value === "number") return `<c r="${reference}"${style}><v>${cell.value}</v></c>`;
+  return `<c r="${reference}" t="inlineStr"${style}><is><t xml:space="preserve">${excelHtmlEscape(readableText(cell.value))}</t></is></c>`;
+}
+
+function xlsxSheetXml(rows, widths = []) {
+  const columnXml = widths.length
+    ? `<cols>${widths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join("")}</cols>`
+    : "";
+  const rowXml = rows.map((row, rowIndex) => `<row r="${rowIndex + 1}">${row.map((cell, columnIndex) => xlsxCellXml(cell, rowIndex, columnIndex)).join("")}</row>`).join("");
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="4" topLeftCell="A5" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${columnXml}<sheetData>${rowXml}</sheetData><autoFilter ref="A4:${xlsxColumnName(Math.max(0, (rows[3]?.length || 1) - 1))}${rows.length}"/></worksheet>`;
+}
+
+function zipCrc32(bytes) {
+  let crc = -1;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return (crc ^ -1) >>> 0;
+}
+
+function buildStoredZip(files) {
+  const encoder = new TextEncoder();
+  const entries = files.map((file) => {
+    const name = encoder.encode(file.name);
+    const data = typeof file.data === "string" ? encoder.encode(file.data) : file.data;
+    return { name, data, crc: zipCrc32(data), offset: 0 };
+  });
+  const localSize = entries.reduce((sum, entry) => sum + 30 + entry.name.length + entry.data.length, 0);
+  const centralSize = entries.reduce((sum, entry) => sum + 46 + entry.name.length, 0);
+  const output = new Uint8Array(localSize + centralSize + 22);
+  const view = new DataView(output.buffer);
+  let offset = 0;
+  const u16 = (value) => { view.setUint16(offset, value, true); offset += 2; };
+  const u32 = (value) => { view.setUint32(offset, value, true); offset += 4; };
+  entries.forEach((entry) => {
+    entry.offset = offset;
+    u32(0x04034b50); u16(20); u16(0x0800); u16(0); u16(0); u16(0); u32(entry.crc);
+    u32(entry.data.length); u32(entry.data.length); u16(entry.name.length); u16(0);
+    output.set(entry.name, offset); offset += entry.name.length;
+    output.set(entry.data, offset); offset += entry.data.length;
+  });
+  const centralOffset = offset;
+  entries.forEach((entry) => {
+    u32(0x02014b50); u16(20); u16(20); u16(0x0800); u16(0); u16(0); u16(0); u32(entry.crc);
+    u32(entry.data.length); u32(entry.data.length); u16(entry.name.length); u16(0); u16(0); u16(0); u16(0); u32(0); u32(entry.offset);
+    output.set(entry.name, offset); offset += entry.name.length;
+  });
+  const centralDirectorySize = offset - centralOffset;
+  u32(0x06054b50); u16(0); u16(0); u16(entries.length); u16(entries.length); u32(centralDirectorySize); u32(centralOffset); u16(0);
+  return output;
+}
+
+function projectionExportCell(provider, month) {
+  const realPaid = providerMonthPaid(provider, month);
+  const manualPaid = projectionCellIsPaid(provider, month) && !realPaid;
+  const inRange = providerMonthIsWithinPayments(provider, month);
+  const projected = projectionGridValue(provider, month);
+  if (realPaid) {
+    const linkedExpenses = expensesForProvider(provider).filter((expense) => Number(expense.month) === month && expense.initiativeId === providerInitiative(provider));
+    return {
+      amount: linkedExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0),
+      state: "Gasto real",
+      style: 4,
+      documents: linkedExpenses.map((expense) => `${expense.docType} ${expense.docNumber}`).join(" | "),
+    };
+  }
+  if (manualPaid) return { amount: projected, state: "Pagado manualmente", style: 6, documents: "" };
+  if (!inRange) return { amount: 0, state: "Fuera del periodo de derecho", style: 0, documents: "" };
+  if (projected > 0) return { amount: projected, state: "Proyectado", style: 5, documents: "" };
+  return { amount: 0, state: "Sin estimacion", style: 0, documents: "" };
+}
+
+function exportProjectionExcel() {
+  try {
+    const title = (value) => ({ value, style: 1 });
+    const header = (value) => ({ value, style: 2 });
+    const textCell = (value, style = 0) => ({ value, style });
+    const moneyCell = (value, style = 3) => ({ value: Number(value || 0), style });
+    const projectionProviders = visibleProjectionProviders();
+    const generatedAt = new Date().toLocaleString("es-CL");
+    const summaryRows = [
+      [title("Proyeccion presupuestaria 2026")],
+      [textCell(`Generado: ${generatedAt}`)],
+      [textCell("Los filtros visuales no alteran esta descarga. Montos expresados en pesos chilenos.")],
+      ["Iniciativa", "Presupuesto", "Gasto real", "Proyectado", "Cierre estimado", "Saldo estimado"].map(header),
+      ...INITIATIVES.map((initiative) => {
+        const budget = totalBudget(initiative);
+        const real = expenseTotal(initiative.id);
+        const projected = projectedTotal(initiative.id);
+        return [textCell(initiative.shortName), moneyCell(budget), moneyCell(real, 4), moneyCell(projected, 5), moneyCell(real + projected), moneyCell(budget - real - projected)];
+      }),
+    ];
+    const detailRows = [
+      [title("Detalle mensual de proyecciones")],
+      [textCell(`Generado: ${generatedAt}`)],
+      [textCell("Cada fila identifica el origen y estado de un monto mensual.")],
+      ["Iniciativa", "Proveedor/persona", "Responsable", "Mes", "Estado", "Monto", "Documento asociado"].map(header),
+    ];
+    const matrixSheets = INITIATIVES.map((initiative) => {
+      const providersForInitiative = projectionProviders.filter((provider) => providerInitiative(provider) === initiative.id);
+      const rows = [
+        [title(initiative.shortName)],
+        [textCell(`Generado: ${generatedAt}`)],
+        [textCell("Verde: real | Naranjo: proyectado | Azul: pagado manualmente")],
+        ["Proveedor/persona", "Responsable", ...MONTHS, "Total real", "Total proyectado", "Total combinado"].map(header),
+      ];
+      providersForInitiative.forEach((provider) => {
+        let realTotal = 0;
+        let projectedTotalValue = 0;
+        const monthCells = MONTHS.map((monthName, month) => {
+          const cell = projectionExportCell(provider, month);
+          detailRows.push([
+            textCell(initiative.shortName), textCell(provider.name), textCell(provider.employee || ""), textCell(monthName),
+            textCell(cell.state), moneyCell(cell.amount, cell.style || 3), textCell(cell.documents),
+          ]);
+          if (cell.state === "Gasto real" || cell.state === "Pagado manualmente") realTotal += cell.amount;
+          if (cell.state === "Proyectado") projectedTotalValue += cell.amount;
+          return cell.amount ? moneyCell(cell.amount, cell.style || 3) : textCell("");
+        });
+        rows.push([textCell(provider.name), textCell(provider.employee || ""), ...monthCells, moneyCell(realTotal, 4), moneyCell(projectedTotalValue, 5), moneyCell(realTotal + projectedTotalValue)]);
+      });
+      return { name: initiative.shortName.slice(0, 31), rows };
+    });
+
+    const reviewRows = [
+      [title("Revision automatica")],
+      [textCell(`Generado: ${generatedAt}`)],
+      [textCell("Estas alertas no modifican datos; indican registros que conviene revisar.")],
+      ["Tipo de revision", "Iniciativa", "Proveedor/persona", "Detalle"].map(header),
+    ];
+    const today = new Date();
+    const elapsedMonthLimit = today.getFullYear() > 2026 ? 12 : today.getFullYear() === 2026 ? today.getMonth() : 0;
+    INITIATIVES.forEach((initiative) => {
+      const initiativeProviders = projectionProviders.filter((provider) => providerInitiative(provider) === initiative.id);
+      const signatures = new Map();
+      initiativeProviders.forEach((provider) => {
+        const projectedCells = MONTHS.map((_, month) => projectionExportCell(provider, month));
+        const historicalMonths = projectedCells
+          .map((cell, month) => cell.state === "Proyectado" && month < elapsedMonthLimit ? MONTHS[month] : "")
+          .filter(Boolean);
+        if (historicalMonths.length) {
+          reviewRows.push([
+            textCell("Proyeccion en mes transcurrido"), textCell(initiative.shortName), textCell(provider.name),
+            textCell(`Revisar: ${historicalMonths.join(", ")}`),
+          ]);
+        }
+        const signatureValues = projectedCells.map((cell) => cell.state === "Proyectado" ? cell.amount : 0);
+        if (signatureValues.some((value) => value > 0)) {
+          const signature = signatureValues.join("|");
+          if (!signatures.has(signature)) signatures.set(signature, []);
+          signatures.get(signature).push(provider.name);
+        }
+      });
+      signatures.forEach((providerNames) => {
+        if (providerNames.length < 2) return;
+        reviewRows.push([
+          textCell("Posible patron duplicado"), textCell(initiative.shortName), textCell(providerNames.join(" | ")),
+          textCell("Los proveedores tienen exactamente los mismos montos proyectados por mes. Confirmar que corresponda."),
+        ]);
+      });
+      const budget = totalBudget(initiative);
+      const estimatedClose = expenseTotal(initiative.id) + projectedTotal(initiative.id);
+      if (estimatedClose > budget) {
+        reviewRows.push([
+          textCell("Presupuesto excedido"), textCell(initiative.shortName), textCell("Todas las instituciones"),
+          textCell(`El cierre estimado supera el presupuesto en ${money.format(estimatedClose - budget)}.`),
+        ]);
+      }
+    });
+    if (reviewRows.length === 4) reviewRows.push([textCell("Sin observaciones"), textCell(""), textCell(""), textCell("No se detectaron alertas automaticas.")]);
+
+    const sheets = [
+      { name: "Resumen", rows: summaryRows, widths: [30, 16, 16, 16, 18, 18] },
+      { name: "Detalle mensual", rows: detailRows, widths: [24, 34, 28, 14, 24, 16, 30] },
+      { name: "Revision", rows: reviewRows, widths: [28, 24, 42, 72] },
+      ...matrixSheets.map((sheet) => ({ ...sheet, widths: [34, 28, ...MONTHS.map(() => 14), 16, 18, 18] })),
+    ];
+    const workbookRelationships = sheets.map((_, index) => `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`).join("");
+    const workbookSheets = sheets.map((sheet, index) => `<sheet name="${excelHtmlEscape(readableText(sheet.name))}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`).join("");
+    const contentOverrides = sheets.map((_, index) => `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
+    const files = [
+      { name: "[Content_Types].xml", data: `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${contentOverrides}</Types>` },
+      { name: "_rels/.rels", data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
+      { name: "xl/workbook.xml", data: `<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${workbookSheets}</sheets></workbook>` },
+      { name: "xl/_rels/workbook.xml.rels", data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${workbookRelationships}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
+      { name: "xl/styles.xml", data: `<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="&quot;$&quot;#,##0;[Red]-&quot;$&quot;#,##0"/></numFmts><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/><color rgb="FFFFFFFF"/></font></fonts><fills count="6"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF233F56"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCEFE8"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFFBE3B5"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCE8F5"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="7"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" applyNumberFormat="1"/><xf numFmtId="164" fontId="0" fillId="3" borderId="0" applyNumberFormat="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="4" borderId="0" applyNumberFormat="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="5" borderId="0" applyNumberFormat="1" applyFill="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` },
+      ...sheets.map((sheet, index) => ({ name: `xl/worksheets/sheet${index + 1}.xml`, data: xlsxSheetXml(sheet.rows, sheet.widths) })),
+    ];
+    const blob = new Blob([buildStoredZip(files)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `proyeccion_presupuestaria_2026_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  } catch (error) {
+    console.error("No se pudo generar el archivo XLSX", error);
+    exportProjectionLegacyExcel();
+  }
 }
 
 function backupData() {
@@ -3887,12 +4070,6 @@ async function initializeApp() {
     saveProjectionPaidGrid();
     saveNoPaymentGrid();
     saveDeletedProviderIds();
-  }
-  if (clearKnownIncorrectProjectionData() || knownProjectionCleanupPending) {
-    saveProjections();
-    saveProjectionGrid();
-    saveProjectionPaidGrid();
-    knownProjectionCleanupPending = false;
   }
   migrateLegacyProjectionsToGrid();
   fillSelectors();
