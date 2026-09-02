@@ -607,13 +607,15 @@ function applySharedData(data) {
 }
 
 async function saveSharedDataNow() {
-  if (!sharedDataReady) return;
+  if (!sharedDataReady) return false;
   try {
-    await fetch("/api/shared-data", {
+    const response = await fetch("/api/shared-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(localDataPayload()),
     });
+    if (!response.ok) throw new Error("No fue posible guardar los datos compartidos.");
+    return true;
   } catch {
     // Si la red falla, el navegador mantiene una copia local para no perder trabajo.
   }
@@ -666,6 +668,12 @@ async function loadSharedData() {
     }
     const result = await response.json();
     if (result.exists && result.data) {
+      if (!operationalDataHasRecords(result.data) && localOperationalDataHasRecords()) {
+        sharedDataReady = true;
+        await saveSharedDataNow();
+        sharedDataReady = false;
+        return;
+      }
       applySharedData(result.data);
       return;
     }
@@ -747,6 +755,28 @@ function normalizeProviderDates(provider) {
 
 function byInitiative(id) {
   return INITIATIVES.find((item) => item.id === id);
+}
+
+function operationalDataHasRecords(data = {}) {
+  return Boolean(
+    (Array.isArray(data.expenses) && data.expenses.length)
+    || (Array.isArray(data.projections) && data.projections.length)
+    || (Array.isArray(data.providers) && data.providers.length)
+    || Object.keys(data.projectionGrid || {}).length
+    || Object.keys(data.projectionPaidGrid || {}).length
+    || Object.keys(data.noPaymentGrid || {}).length
+  );
+}
+
+function localOperationalDataHasRecords() {
+  return operationalDataHasRecords({
+    expenses,
+    projections,
+    providers,
+    projectionGrid,
+    projectionPaidGrid,
+    noPaymentGrid,
+  });
 }
 
 function validInitiativeFilter(value) {
@@ -3390,6 +3420,7 @@ function exportProjectionExcel() {
   } catch (error) {
     console.error("No se pudo generar el archivo XLSX", error);
     exportProjectionLegacyExcel();
+    return false;
   }
 }
 
@@ -4009,9 +4040,11 @@ document.querySelector("#downloadProjectionExcel").addEventListener("click", exp
 document.querySelector("#syncSharedData").addEventListener("click", async () => {
   captureProjectionGridFromDom();
   sharedDataReady = true;
-  await saveSharedDataNow();
+  const saved = await saveSharedDataNow();
   renderAll();
-  alert("Datos sincronizados con el archivo central. Tus compañeros deben recargar con Ctrl + F5.");
+  alert(saved
+    ? "Datos sincronizados con el archivo central. Tus compañeros deben recargar con Ctrl + F5."
+    : "No se pudo acceder al archivo central. Tus datos siguen guardados en este navegador.");
 });
 document.querySelector("#backupData").addEventListener("click", backupData);
 document.querySelector("#executiveAlerts").addEventListener("click", (event) => {
