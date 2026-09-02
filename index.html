@@ -15,17 +15,12 @@
         <div class="brand-mark">CB</div>
         <p class="eyebrow">Acceso protegido</p>
         <h1 id="authTitle">Control Bienestar 2026</h1>
-        <p>Ingresa con tu correo autorizado para consultar la información compartida.</p>
+        <p>Ingresa la clave compartida para consultar y actualizar la información.</p>
         <label>
-          Correo electrónico
-          <input id="authEmail" type="email" autocomplete="email" required />
-        </label>
-        <label>
-          Contraseña
-          <input id="authPassword" type="password" autocomplete="current-password" minlength="8" required />
+          Clave de acceso
+          <input id="authAccessCode" type="password" autocomplete="current-password" required />
         </label>
         <button id="authSignIn" class="button primary" type="submit">Ingresar</button>
-        <button id="authSignUp" class="button secondary" type="button">Crear mi acceso</button>
         <small id="authMessage" class="auth-message" role="status"></small>
       </form>
     </section>
@@ -66,8 +61,8 @@
             <p class="page-intro">Vista consolidada de pagos reales, presupuesto disponible y compromisos futuros.</p>
           </div>
           <div class="actions">
-            <span id="currentUser" class="current-user" hidden></span>
-            <button id="authSignOut" class="button ghost" type="button" hidden>Cerrar sesión</button>
+            <span id="currentUser" class="current-user" hidden>Datos compartidos</span>
+            <button id="authSignOut" class="button ghost" type="button" hidden>Bloquear</button>
             <button id="exportCsv" class="button secondary" type="button">Exportar CSV</button>
             <button id="syncSharedData" class="button secondary" type="button">Sincronizar datos</button>
             <label class="button secondary import-button">
@@ -579,7 +574,6 @@
       </main>
     </div>
     <input id="rowPdfAttachment" type="file" accept="application/pdf" hidden />
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
-    <script src="app.js?v=20260902-3"></script>
+    <script src="app.js?v=20260902-4"></script>
   </body>
 </html>

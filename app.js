@@ -15,9 +15,9 @@
 
 const SUPABASE_URL = "https://nednpsvwvdarzxvldhju.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_h4tBqHCbRGjda2tPA4Y8qA_pOd6VHDi";
-const cloudClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) || null;
-let cloudSession = null;
-let cloudMember = null;
+const CLOUD_DATA_URL = SUPABASE_URL + "/rest/v1/control_workspace_state?id=eq.main";
+const ACCESS_CODE_KEY = "control-bienestar-shared-access";
+let sharedAccessCode = sessionStorage.getItem(ACCESS_CODE_KEY) || "";
 
 function newId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
@@ -640,33 +640,32 @@ function showApplication() {
   const userLabel = document.querySelector("#currentUser");
   const signOut = document.querySelector("#authSignOut");
   if (userLabel) {
-    userLabel.textContent = cloudSession?.user?.email || "";
+    userLabel.textContent = "Datos compartidos";
     userLabel.hidden = false;
   }
   if (signOut) signOut.hidden = false;
 }
 
 async function initializeCloudAccess() {
-  if (!cloudClient) {
-    showAuthGate("No fue posible conectar con la base compartida. Recarga la página.");
-    return false;
-  }
-  const { data: sessionData, error: sessionError } = await cloudClient.auth.getSession();
-  if (sessionError || !sessionData.session) {
+  if (!sharedAccessCode) {
     showAuthGate();
     return false;
   }
-  cloudSession = sessionData.session;
-  const { data: member, error: memberError } = await cloudClient
-    .from("control_members")
-    .select("role,email")
-    .eq("user_id", cloudSession.user.id)
-    .maybeSingle();
-  if (memberError || !member) {
-    showAuthGate("Este correo todavía no está autorizado. Solicita acceso al administrador.");
+  try {
+    const response = await fetch(CLOUD_DATA_URL + "&select=id", {
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        "x-control-key": sharedAccessCode,
+      },
+      cache: "no-store",
+    });
+    if (!response.ok || !(await response.json()).length) throw new Error("Acceso denegado");
+  } catch {
+    sessionStorage.removeItem(ACCESS_CODE_KEY);
+    sharedAccessCode = "";
+    showAuthGate("La clave no es correcta o no fue posible conectar.");
     return false;
   }
-  cloudMember = member;
   showApplication();
   return true;
 }
@@ -674,16 +673,22 @@ async function initializeCloudAccess() {
 async function saveSharedDataNow() {
   if (!sharedDataReady) return false;
   try {
-    if (cloudClient && cloudSession) {
-      const { error } = await cloudClient
-        .from("control_workspace_state")
-        .update({
+    if (sharedAccessCode) {
+      const response = await fetch(CLOUD_DATA_URL, {
+        method: "PATCH",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          "x-control-key": sharedAccessCode,
+          "Content-Type": "application/json",
+          Prefer: "return=minimal",
+        },
+        body: JSON.stringify({
           payload: localDataPayload(),
           updated_at: new Date().toISOString(),
-          updated_by: cloudSession.user.id,
-        })
-        .eq("id", "main");
-      if (error) throw error;
+          updated_by: null,
+        }),
+      });
+      if (!response.ok) throw new Error("No fue posible guardar los datos compartidos.");
       return true;
     }
     const response = await fetch("/api/shared-data", {
@@ -735,14 +740,17 @@ function captureProjectionGridFromDom() {
 
 async function loadSharedData() {
   try {
-    if (cloudClient && cloudSession) {
-      const { data: row, error } = await cloudClient
-        .from("control_workspace_state")
-        .select("payload,updated_at")
-        .eq("id", "main")
-        .single();
-      if (error) throw error;
-      const remoteData = row?.payload && typeof row.payload === "object" ? row.payload : {};
+    if (sharedAccessCode) {
+      const response = await fetch(CLOUD_DATA_URL + "&select=payload,updated_at", {
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          "x-control-key": sharedAccessCode,
+        },
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error("No fue posible leer los datos compartidos.");
+      const rows = await response.json();
+      const remoteData = rows[0]?.payload && typeof rows[0].payload === "object" ? rows[0].payload : {};
       if (!operationalDataHasRecords(remoteData) && localOperationalDataHasRecords()) {
         sharedDataReady = true;
         await saveSharedDataNow();
@@ -4192,43 +4200,25 @@ document.querySelector("#resetDemo").addEventListener("click", () => {
 
 document.querySelector("#authForm")?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const email = document.querySelector("#authEmail").value.trim().toLowerCase();
-  const password = document.querySelector("#authPassword").value;
+  const accessCode = document.querySelector("#authAccessCode").value;
+  if (!accessCode) return;
   setAuthMessage("Comprobando acceso...");
-  const { error } = await cloudClient.auth.signInWithPassword({ email, password });
-  if (error) {
-    setAuthMessage("No fue posible ingresar. Revisa el correo y la contraseña.", true);
+  sharedAccessCode = accessCode;
+  sessionStorage.setItem(ACCESS_CODE_KEY, accessCode);
+  if (!await initializeCloudAccess()) {
+    document.querySelector("#authAccessCode").value = "";
     return;
   }
-  window.location.reload();
+  await loadSharedData();
+  sharedDataReady = true;
+  fillSelectors();
+  renderProviderF30Fields();
+  setupCollapsiblePanels();
+  renderAll();
 });
 
-document.querySelector("#authSignUp")?.addEventListener("click", async () => {
-  const email = document.querySelector("#authEmail").value.trim().toLowerCase();
-  const password = document.querySelector("#authPassword").value;
-  if (!email || password.length < 8) {
-    setAuthMessage("Ingresa un correo válido y una contraseña de al menos 8 caracteres.", true);
-    return;
-  }
-  setAuthMessage("Creando acceso...");
-  const { data, error } = await cloudClient.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: window.location.origin + window.location.pathname },
-  });
-  if (error) {
-    setAuthMessage(error.message || "No fue posible crear el acceso.", true);
-    return;
-  }
-  if (data.session) {
-    window.location.reload();
-    return;
-  }
-  setAuthMessage("Revisa tu correo y confirma el enlace. Después vuelve aquí para ingresar.");
-});
-
-document.querySelector("#authSignOut")?.addEventListener("click", async () => {
-  await cloudClient?.auth.signOut();
+document.querySelector("#authSignOut")?.addEventListener("click", () => {
+  sessionStorage.removeItem(ACCESS_CODE_KEY);
   window.location.reload();
 });
 
