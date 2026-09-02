@@ -618,6 +618,66 @@ td:last-child {
   color: var(--ink);
 }
 
+.auth-pending .app-shell {
+  display: none;
+}
+
+.auth-gate {
+  min-height: 100vh;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.auth-gate[hidden] {
+  display: none;
+}
+
+.auth-panel {
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+}
+
+.auth-panel h1,
+.auth-panel p {
+  margin: 0;
+}
+
+.auth-panel label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.auth-panel input {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.auth-message {
+  min-height: 20px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.current-user {
+  max-width: 240px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
 .projection-grid-section .projection-provider-filter > details > summary {
   display: flex;
   min-height: 38px;

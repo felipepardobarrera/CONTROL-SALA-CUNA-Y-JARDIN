@@ -13,6 +13,12 @@
   "Diciembre",
 ];
 
+const SUPABASE_URL = "https://nednpsvwvdarzxvldhju.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_h4tBqHCbRGjda2tPA4Y8qA_pOd6VHDi";
+const cloudClient = window.supabase?.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY) || null;
+let cloudSession = null;
+let cloudMember = null;
+
 function newId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   return `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -615,9 +621,71 @@ function applySharedData(data) {
   localStorage.setItem(BUDGET_KEY, JSON.stringify(currentBudgetPayload()));
 }
 
+function setAuthMessage(message, isError = false) {
+  const element = document.querySelector("#authMessage");
+  if (!element) return;
+  element.textContent = message;
+  element.style.color = isError ? "var(--red)" : "var(--muted)";
+}
+
+function showAuthGate(message = "") {
+  document.body.classList.add("auth-pending");
+  document.querySelector("#authGate").hidden = false;
+  setAuthMessage(message);
+}
+
+function showApplication() {
+  document.querySelector("#authGate").hidden = true;
+  document.body.classList.remove("auth-pending");
+  const userLabel = document.querySelector("#currentUser");
+  const signOut = document.querySelector("#authSignOut");
+  if (userLabel) {
+    userLabel.textContent = cloudSession?.user?.email || "";
+    userLabel.hidden = false;
+  }
+  if (signOut) signOut.hidden = false;
+}
+
+async function initializeCloudAccess() {
+  if (!cloudClient) {
+    showAuthGate("No fue posible conectar con la base compartida. Recarga la página.");
+    return false;
+  }
+  const { data: sessionData, error: sessionError } = await cloudClient.auth.getSession();
+  if (sessionError || !sessionData.session) {
+    showAuthGate();
+    return false;
+  }
+  cloudSession = sessionData.session;
+  const { data: member, error: memberError } = await cloudClient
+    .from("control_members")
+    .select("role,email")
+    .eq("user_id", cloudSession.user.id)
+    .maybeSingle();
+  if (memberError || !member) {
+    showAuthGate("Este correo todavía no está autorizado. Solicita acceso al administrador.");
+    return false;
+  }
+  cloudMember = member;
+  showApplication();
+  return true;
+}
+
 async function saveSharedDataNow() {
   if (!sharedDataReady) return false;
   try {
+    if (cloudClient && cloudSession) {
+      const { error } = await cloudClient
+        .from("control_workspace_state")
+        .update({
+          payload: localDataPayload(),
+          updated_at: new Date().toISOString(),
+          updated_by: cloudSession.user.id,
+        })
+        .eq("id", "main");
+      if (error) throw error;
+      return true;
+    }
     const response = await fetch("/api/shared-data", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -627,6 +695,7 @@ async function saveSharedDataNow() {
     return true;
   } catch {
     // Si la red falla, el navegador mantiene una copia local para no perder trabajo.
+    return false;
   }
 }
 
@@ -666,6 +735,23 @@ function captureProjectionGridFromDom() {
 
 async function loadSharedData() {
   try {
+    if (cloudClient && cloudSession) {
+      const { data: row, error } = await cloudClient
+        .from("control_workspace_state")
+        .select("payload,updated_at")
+        .eq("id", "main")
+        .single();
+      if (error) throw error;
+      const remoteData = row?.payload && typeof row.payload === "object" ? row.payload : {};
+      if (!operationalDataHasRecords(remoteData) && localOperationalDataHasRecords()) {
+        sharedDataReady = true;
+        await saveSharedDataNow();
+        sharedDataReady = false;
+        return;
+      }
+      applySharedData(remoteData);
+      return;
+    }
     if (window.__CONTROL_SHARED_DATA__) {
       applySharedData(window.__CONTROL_SHARED_DATA__);
       return;
@@ -4104,7 +4190,50 @@ document.querySelector("#resetDemo").addEventListener("click", () => {
   }
 });
 
+document.querySelector("#authForm")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = document.querySelector("#authEmail").value.trim().toLowerCase();
+  const password = document.querySelector("#authPassword").value;
+  setAuthMessage("Comprobando acceso...");
+  const { error } = await cloudClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    setAuthMessage("No fue posible ingresar. Revisa el correo y la contraseña.", true);
+    return;
+  }
+  window.location.reload();
+});
+
+document.querySelector("#authSignUp")?.addEventListener("click", async () => {
+  const email = document.querySelector("#authEmail").value.trim().toLowerCase();
+  const password = document.querySelector("#authPassword").value;
+  if (!email || password.length < 8) {
+    setAuthMessage("Ingresa un correo válido y una contraseña de al menos 8 caracteres.", true);
+    return;
+  }
+  setAuthMessage("Creando acceso...");
+  const { data, error } = await cloudClient.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+  });
+  if (error) {
+    setAuthMessage(error.message || "No fue posible crear el acceso.", true);
+    return;
+  }
+  if (data.session) {
+    window.location.reload();
+    return;
+  }
+  setAuthMessage("Revisa tu correo y confirma el enlace. Después vuelve aquí para ingresar.");
+});
+
+document.querySelector("#authSignOut")?.addEventListener("click", async () => {
+  await cloudClient?.auth.signOut();
+  window.location.reload();
+});
+
 async function initializeApp() {
+  if (!await initializeCloudAccess()) return;
   await loadSharedData();
   sharedDataReady = true;
   if (removeKnownInvalidProviders()) {
