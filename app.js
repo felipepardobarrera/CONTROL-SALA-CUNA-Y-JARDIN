@@ -144,6 +144,15 @@ function cleanVisibleText(root = document.body) {
   });
 }
 
+function restorePagePositionUnlessUserMoved(pagePosition) {
+  const positionAfterRender = { left: window.scrollX, top: window.scrollY };
+  requestAnimationFrame(() => {
+    const userMoved = Math.abs(window.scrollX - positionAfterRender.left) > 2
+      || Math.abs(window.scrollY - positionAfterRender.top) > 2;
+    if (!userMoved) window.scrollTo({ ...pagePosition, behavior: "instant" });
+  });
+}
+
 cleanTextList(INITIATIVES);
 cleanTextList(DEFAULT_PROVIDERS);
 cleanTextList(PROJECTION_SCENARIO_PROVIDERS);
@@ -2520,7 +2529,7 @@ function renderProjectionGrid() {
       element.dataset.providerId === activeCell.providerId && element.dataset.month === activeCell.month);
     replacement?.focus({ preventScroll: true });
   }
-  requestAnimationFrame(() => window.scrollTo({ ...pagePosition, behavior: "instant" }));
+  restorePagePositionUnlessUserMoved(pagePosition);
 }
 
 function renderProjectionQuickForm() {
@@ -3073,6 +3082,7 @@ function renderBudgetBase() {
 }
 
 function renderAll() {
+  const pagePosition = { left: window.scrollX, top: window.scrollY };
   providerExpenseCache = new Map();
   renderKpis();
   renderInitiativeCards();
@@ -3091,6 +3101,7 @@ function renderAll() {
   renderSummary();
   renderBulkDocuments();
   cleanVisibleText();
+  restorePagePositionUnlessUserMoved(pagePosition);
 }
 
 function renderProjectionViews() {
