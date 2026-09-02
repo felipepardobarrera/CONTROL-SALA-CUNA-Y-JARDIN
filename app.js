@@ -18,6 +18,7 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_h4tBqHCbRGjda2tPA4Y8qA_pOd6VHDi
 const CLOUD_DATA_URL = SUPABASE_URL + "/rest/v1/control_workspace_state?id=eq.main";
 const ACCESS_CODE_KEY = "control-bienestar-shared-access";
 let sharedAccessCode = sessionStorage.getItem(ACCESS_CODE_KEY) || "";
+let centralNeedsInitialSync = false;
 
 function newId() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
@@ -529,6 +530,7 @@ async function deleteProviderEverywhere(provider) {
 
 function localDataPayload() {
   return {
+    _sharedInitialized: true,
     replaceExpenses: true,
     replaceProjections: true,
     replaceProviders: true,
@@ -670,8 +672,9 @@ async function initializeCloudAccess() {
   return true;
 }
 
-async function saveSharedDataNow() {
+async function saveSharedDataNow(forceInitialSync = false) {
   if (!sharedDataReady) return false;
+  if (centralNeedsInitialSync && !forceInitialSync) return false;
   try {
     if (sharedAccessCode) {
       const response = await fetch(CLOUD_DATA_URL, {
@@ -689,6 +692,9 @@ async function saveSharedDataNow() {
         }),
       });
       if (!response.ok) throw new Error("No fue posible guardar los datos compartidos.");
+      centralNeedsInitialSync = false;
+      const syncButton = document.querySelector("#syncSharedData");
+      if (syncButton) syncButton.textContent = "Sincronizar datos";
       return true;
     }
     const response = await fetch("/api/shared-data", {
@@ -751,12 +757,15 @@ async function loadSharedData() {
       if (!response.ok) throw new Error("No fue posible leer los datos compartidos.");
       const rows = await response.json();
       const remoteData = rows[0]?.payload && typeof rows[0].payload === "object" ? rows[0].payload : {};
-      if (!operationalDataHasRecords(remoteData) && localOperationalDataHasRecords()) {
-        sharedDataReady = true;
-        await saveSharedDataNow();
-        sharedDataReady = false;
+      if (remoteData._sharedInitialized !== true
+        && !operationalDataHasRecords(remoteData)
+        && localOperationalDataHasRecords()) {
+        centralNeedsInitialSync = true;
+        const syncButton = document.querySelector("#syncSharedData");
+        if (syncButton) syncButton.textContent = "Publicar esta copia";
         return;
       }
+      centralNeedsInitialSync = false;
       applySharedData(remoteData);
       return;
     }
@@ -4145,10 +4154,13 @@ document.querySelector("#downloadProjectionExcel").addEventListener("click", exp
 document.querySelector("#syncSharedData").addEventListener("click", async () => {
   captureProjectionGridFromDom();
   sharedDataReady = true;
-  const saved = await saveSharedDataNow();
+  const isFirstPublication = centralNeedsInitialSync;
+  const saved = await saveSharedDataNow(true);
   renderAll();
   alert(saved
-    ? "Datos sincronizados con el archivo central. Tus compañeros deben recargar con Ctrl + F5."
+    ? (isFirstPublication
+      ? "Esta copia quedó establecida como información central. Los demás dispositivos deben recargar."
+      : "Datos sincronizados con el archivo central. Tus compañeros deben recargar con Ctrl + F5.")
     : "No se pudo acceder al archivo central. Tus datos siguen guardados en este navegador.");
 });
 document.querySelector("#backupData").addEventListener("click", backupData);
