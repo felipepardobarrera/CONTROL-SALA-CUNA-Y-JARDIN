@@ -3409,6 +3409,30 @@ function renderAnnualSimulations() {
     <label>Pagos de monto directo<input data-assumption="directPayments" type="number" min="0" step="1" value="${assumptions.directPayments}" /></label>
   `;
 
+  const currentSpending = simulationSpending(scenarios[0], assumptions);
+  const peopleItems = [
+    { key: "gardenCount", label: "Jardín infantil", count: assumptions.gardenCount, cost: currentSpending.garden, tone: "garden" },
+    { key: "nurseryCount", label: "Sala cuna", count: assumptions.nurseryCount, cost: currentSpending.nursery, tone: "nursery" },
+    { key: "directCount", label: "Pago excepcional", count: assumptions.directCount, cost: currentSpending.direct, tone: "direct" },
+  ];
+  const maxPeople = Math.max(1, ...peopleItems.map((item) => Number(item.count || 0)));
+  document.querySelector("#simulationPeopleChart").innerHTML = peopleItems.map((item) => `
+    <article class="simulation-people-row" data-people-key="${item.key}">
+      <div class="simulation-people-label">
+        <strong>${item.label}</strong>
+        <small>${money.format(item.cost)} en el escenario actual</small>
+      </div>
+      <div class="simulation-people-bar" aria-hidden="true">
+        <span class="${item.tone}" style="width:${Math.max(0, Math.min(100, Number(item.count || 0) / maxPeople * 100))}%"></span>
+      </div>
+      <div class="simulation-people-stepper">
+        <button class="simulation-people-minus" type="button" title="Quitar una persona" aria-label="Quitar una persona de ${item.label}">−</button>
+        <output aria-label="Cantidad de ${item.label}">${item.count}</output>
+        <button class="simulation-people-plus" type="button" title="Agregar una persona" aria-label="Agregar una persona a ${item.label}">+</button>
+      </div>
+    </article>
+  `).join("");
+
   document.querySelector("#simulationComparisonRows").innerHTML = scenarios.map((scenario) => {
     const spending = simulationSpending(scenario, assumptions);
     const budget = simulationTotal(scenario);
@@ -4501,6 +4525,20 @@ document.querySelector("#simulationAssumptionFields")?.addEventListener("change"
   yearData.assumptions = normalizeSimulationAssumptions({
     ...yearData.assumptions,
     [input.dataset.assumption]: Math.max(0, Number(input.value || 0)),
+  });
+  saveAnnualSimulations();
+  renderAnnualSimulations();
+});
+document.querySelector("#simulationPeopleChart")?.addEventListener("click", (event) => {
+  const button = event.target.closest(".simulation-people-minus, .simulation-people-plus");
+  const row = event.target.closest("[data-people-key]");
+  const yearData = selectedSimulationYearData();
+  if (!button || !row || !yearData) return;
+  const key = row.dataset.peopleKey;
+  const change = button.classList.contains("simulation-people-plus") ? 1 : -1;
+  yearData.assumptions = normalizeSimulationAssumptions({
+    ...yearData.assumptions,
+    [key]: Math.max(0, Number(yearData.assumptions[key] || 0) + change),
   });
   saveAnnualSimulations();
   renderAnnualSimulations();

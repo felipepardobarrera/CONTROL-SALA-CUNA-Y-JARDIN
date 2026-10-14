@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Control Bienestar 2026</title>
-    <link rel="stylesheet" href="styles.css?v=20261014-2" />
+    <link rel="stylesheet" href="styles.css?v=20261014-3" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-labelledby="authTitle">
@@ -553,6 +553,16 @@
             <summary>Supuestos de cálculo del año</summary>
             <div id="simulationAssumptionFields" class="simulation-assumption-fields"></div>
           </details>
+          <section class="simulation-people" aria-labelledby="simulationPeopleTitle">
+            <div class="simulation-people-heading">
+              <div>
+                <p class="eyebrow">Cantidad por concepto</p>
+                <h4 id="simulationPeopleTitle">Personas consideradas</h4>
+              </div>
+              <span>Usa − o + para recalcular los escenarios</span>
+            </div>
+            <div id="simulationPeopleChart" class="simulation-people-chart"></div>
+          </section>
           <div id="simulationYearSummary" class="simulation-summary"></div>
           <div class="table-wrap simulation-comparison-wrap">
             <table class="simulation-comparison">
@@ -632,6 +642,6 @@
       </main>
     </div>
     <input id="rowPdfAttachment" type="file" accept="application/pdf" hidden />
-    <script src="app.js?v=20261014-2"></script>
+    <script src="app.js?v=20261014-3"></script>
   </body>
 </html>
