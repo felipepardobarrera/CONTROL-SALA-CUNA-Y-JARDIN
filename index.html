@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Control Bienestar 2026</title>
-    <link rel="stylesheet" href="styles.css?v=20260902-1" />
+    <link rel="stylesheet" href="styles.css?v=20261014-1" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-labelledby="authTitle">
@@ -45,6 +45,8 @@
           <a href="#proveedores">Proveedores</a>
           <a href="#control-proveedores">Control mensual</a>
           <a href="#proyeccion">Proyecciones</a>
+          <span class="nav-group">Planificación</span>
+          <a href="#simulaciones">Simulaciones por año</a>
           <a href="#presentacion">Reporte ejecutivo</a>
         </nav>
         <div class="source-note">
@@ -515,6 +517,57 @@
           <div id="expenseSections" class="expense-sections"></div>
         </section>
 
+        <section id="simulaciones" class="panel simulation-panel">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Planificación independiente</p>
+              <h3>Simulaciones por año</h3>
+              <p class="section-intro">Compara alternativas presupuestarias sin modificar el control operativo 2026.</p>
+            </div>
+            <div class="actions">
+              <label class="simulation-year-picker">
+                Año
+                <select id="simulationYearSelect" aria-label="Año de simulación"></select>
+              </label>
+              <button id="toggleSimulationYearForm" class="button secondary" type="button">Nuevo año</button>
+              <button id="addSimulationScenario" class="button ghost" type="button">Nuevo escenario</button>
+              <button id="downloadSimulationCsv" class="button ghost" type="button">Descargar comparación</button>
+            </div>
+          </div>
+          <form id="simulationYearForm" class="simulation-year-form" hidden>
+            <label>
+              Nuevo año
+              <input id="simulationNewYear" type="number" min="2026" max="2100" step="1" placeholder="Ej: 2028" required />
+            </label>
+            <label>
+              Crear desde
+              <select id="simulationCloneYear"></select>
+            </label>
+            <button class="button primary" type="submit">Crear año</button>
+            <button id="cancelSimulationYear" class="button ghost" type="button">Cancelar</button>
+          </form>
+          <div class="simulation-notice" role="note">
+            Los escenarios se guardan de forma compartida, pero no cambian pagos, proveedores, presupuesto base ni proyecciones del año vigente.
+          </div>
+          <div id="simulationYearSummary" class="simulation-summary"></div>
+          <div class="table-wrap simulation-comparison-wrap">
+            <table class="simulation-comparison">
+              <thead>
+                <tr>
+                  <th>Escenario</th>
+                  <th>Jardín arrastre</th>
+                  <th>Jardín año</th>
+                  <th>Sala cuna</th>
+                  <th>Pago excepcional</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody id="simulationComparisonRows"></tbody>
+            </table>
+          </div>
+          <div id="simulationScenarioList" class="simulation-scenario-list"></div>
+        </section>
+
         <section id="presentacion" class="panel report-panel">
           <div class="section-heading">
             <div>
@@ -574,6 +627,6 @@
       </main>
     </div>
     <input id="rowPdfAttachment" type="file" accept="application/pdf" hidden />
-    <script src="app.js?v=20260902-5"></script>
+    <script src="app.js?v=20261014-1"></script>
   </body>
 </html>

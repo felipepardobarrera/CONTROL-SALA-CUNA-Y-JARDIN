@@ -79,6 +79,51 @@ const NO_PAYMENT_KEY = `${STORAGE_NAMESPACE}-sin-pago-mensual`;
 const EXPENSE_DISCLOSURE_KEY = `${STORAGE_NAMESPACE}-despliegue-pagos`;
 const DISMISSED_ALERTS_KEY = `${STORAGE_NAMESPACE}-alertas-ocultas`;
 const DELETED_PROVIDERS_KEY = `${STORAGE_NAMESPACE}-proveedores-eliminados`;
+const ANNUAL_SIMULATIONS_KEY = `${STORAGE_NAMESPACE}-simulaciones-anuales`;
+
+const DEFAULT_ANNUAL_SIMULATIONS = {
+  selectedYear: 2027,
+  years: {
+    2027: {
+      year: 2027,
+      scenarios: [
+        {
+          id: "2027-montos-actuales",
+          name: "Montos actuales",
+          gardenCarryover: 18840000,
+          gardenAnnual: 10786000,
+          nurseryAnnual: 12560000,
+          exceptionalAnnual: 33050000,
+          gardenUf: 4.9,
+          nurseryUf: 0,
+          notes: "Escenario base para el ejercicio 2027.",
+        },
+        {
+          id: "2027-subir-montos-1",
+          name: "Subir montos 1",
+          gardenCarryover: 18840000,
+          gardenAnnual: 10786000,
+          nurseryAnnual: 12560000,
+          exceptionalAnnual: 33050000,
+          gardenUf: 5,
+          nurseryUf: 10,
+          notes: "Propuesta: Jardín 5,0 UF y Sala cuna 10,0 UF.",
+        },
+        {
+          id: "2027-subir-montos-2",
+          name: "Subir montos 2",
+          gardenCarryover: 18840000,
+          gardenAnnual: 10786000,
+          nurseryAnnual: 12560000,
+          exceptionalAnnual: 33050000,
+          gardenUf: 5.5,
+          nurseryUf: 11,
+          notes: "Propuesta: Jardín 5,5 UF y Sala cuna 11,0 UF.",
+        },
+      ],
+    },
+  },
+};
 
 function readableText(value) {
   if (typeof value !== "string") return value;
@@ -193,6 +238,7 @@ let providers = loadProviders();
 let noPaymentGrid = loadNoPaymentGrid();
 let dismissedAlerts = loadDismissedAlerts();
 let deletedProviderIds = loadDeletedProviderIds();
+let annualSimulations = loadAnnualSimulations();
 expenses = cleanTextList(expenses);
 projections = cleanTextList(projections);
 providers = cleanTextList(providers);
@@ -241,6 +287,60 @@ function loadBudgets() {
 
 function saveBudgets() {
   localStorage.setItem(BUDGET_KEY, JSON.stringify(currentBudgetPayload()));
+  scheduleSharedDataSave();
+}
+
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function normalizeSimulationScenario(scenario, year) {
+  const source = scenario && typeof scenario === "object" ? scenario : {};
+  const amount = (key) => Math.max(0, Math.round(Number(source[key] || 0)));
+  const rate = (key) => Math.max(0, Number(source[key] || 0));
+  return {
+    id: String(source.id || `${year}-${newId()}`),
+    name: String(source.name || "Nuevo escenario"),
+    gardenCarryover: amount("gardenCarryover"),
+    gardenAnnual: amount("gardenAnnual"),
+    nurseryAnnual: amount("nurseryAnnual"),
+    exceptionalAnnual: amount("exceptionalAnnual"),
+    gardenUf: rate("gardenUf"),
+    nurseryUf: rate("nurseryUf"),
+    notes: String(source.notes || ""),
+  };
+}
+
+function normalizeAnnualSimulations(value) {
+  const fallback = cloneJson(DEFAULT_ANNUAL_SIMULATIONS);
+  if (!value || typeof value !== "object" || !value.years || typeof value.years !== "object") return fallback;
+  const years = {};
+  Object.entries(value.years).forEach(([key, entry]) => {
+    const year = Math.max(2026, Math.round(Number(entry?.year || key)));
+    if (!Number.isFinite(year)) return;
+    const scenarios = Array.isArray(entry?.scenarios)
+      ? entry.scenarios.map((scenario) => normalizeSimulationScenario(scenario, year))
+      : [];
+    years[year] = { year, scenarios: scenarios.length ? scenarios : [normalizeSimulationScenario({}, year)] };
+  });
+  if (!Object.keys(years).length) return fallback;
+  const selected = Number(value.selectedYear);
+  const selectedYear = years[selected] ? selected : Number(Object.keys(years).sort((a, b) => Number(a) - Number(b))[0]);
+  return { selectedYear, years };
+}
+
+function loadAnnualSimulations() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(ANNUAL_SIMULATIONS_KEY));
+    return normalizeAnnualSimulations(saved);
+  } catch {
+    return cloneJson(DEFAULT_ANNUAL_SIMULATIONS);
+  }
+}
+
+function saveAnnualSimulations() {
+  annualSimulations = normalizeAnnualSimulations(annualSimulations);
+  localStorage.setItem(ANNUAL_SIMULATIONS_KEY, JSON.stringify(annualSimulations));
   scheduleSharedDataSave();
 }
 
@@ -547,6 +647,7 @@ function localDataPayload() {
     deletedProviderIds,
     providers: uniqueArrayBy(providers, providerMergeKey),
     budgets: currentBudgetPayload(),
+    annualSimulations,
   };
 }
 
@@ -606,6 +707,7 @@ function applySharedData(data) {
     ...(data.deletedProviderIds && typeof data.deletedProviderIds === "object" ? data.deletedProviderIds : {}),
   };
   applyBudgetOverrides(data.budgets && typeof data.budgets === "object" ? data.budgets : loadBudgets());
+  annualSimulations = normalizeAnnualSimulations(data.annualSimulations || annualSimulations);
   providers = (sharedProviders.length
     ? uniqueArrayBy(sharedProviders, providerMergeKey).map(normalizeProviderDates)
     : DEFAULT_PROVIDERS.map(normalizeProviderDates))
@@ -621,6 +723,7 @@ function applySharedData(data) {
   localStorage.setItem(DELETED_PROVIDERS_KEY, JSON.stringify(deletedProviderIds));
   localStorage.setItem(PROVIDER_KEY, JSON.stringify(providers));
   localStorage.setItem(BUDGET_KEY, JSON.stringify(currentBudgetPayload()));
+  localStorage.setItem(ANNUAL_SIMULATIONS_KEY, JSON.stringify(annualSimulations));
 }
 
 function setAuthMessage(message, isError = false) {
@@ -1243,6 +1346,7 @@ function setupCollapsiblePanels() {
     { id: "proyeccion", label: "ProyecciÃ³n", collapsed: true },
     { id: "registro", label: "Registro mensual", collapsed: false },
     { id: "detalle", label: "Control operativo", collapsed: false },
+    { id: "simulaciones", label: "Simulaciones por año", collapsed: false },
     { id: "presentacion", label: "Reporte ejecutivo", collapsed: true },
   ];
   const state = loadPanelState();
@@ -3184,6 +3288,117 @@ function renderBudgetBase() {
   if (totalElement) totalElement.textContent = money.format(grandTotal);
 }
 
+function simulationEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function simulationTotal(scenario) {
+  return Number(scenario.gardenCarryover || 0)
+    + Number(scenario.gardenAnnual || 0)
+    + Number(scenario.nurseryAnnual || 0)
+    + Number(scenario.exceptionalAnnual || 0);
+}
+
+function simulationUfLabel(value, fallback) {
+  const rate = Number(value || 0);
+  return rate > 0 ? `${rate.toLocaleString("es-CL")} UF` : fallback;
+}
+
+function selectedSimulationYearData() {
+  const year = Number(annualSimulations.selectedYear);
+  return annualSimulations.years[year] || null;
+}
+
+function renderAnnualSimulations() {
+  const yearSelect = document.querySelector("#simulationYearSelect");
+  if (!yearSelect) return;
+  const years = Object.keys(annualSimulations.years).map(Number).sort((a, b) => a - b);
+  if (!annualSimulations.years[annualSimulations.selectedYear]) annualSimulations.selectedYear = years[0];
+  const options = years.map((year) => `<option value="${year}">${year}</option>`).join("");
+  yearSelect.innerHTML = options;
+  yearSelect.value = String(annualSimulations.selectedYear);
+  const cloneYear = document.querySelector("#simulationCloneYear");
+  if (cloneYear) {
+    cloneYear.innerHTML = `<option value="blank">En blanco</option>${options}`;
+    cloneYear.value = String(annualSimulations.selectedYear);
+  }
+
+  const yearData = selectedSimulationYearData();
+  if (!yearData) return;
+  const scenarios = yearData.scenarios;
+  const base = scenarios[0];
+  const baseGarden = Number(base.gardenCarryover || 0) + Number(base.gardenAnnual || 0);
+  const summary = document.querySelector("#simulationYearSummary");
+  summary.innerHTML = `
+    <article><span>Presupuesto Jardín</span><strong>${money.format(baseGarden)}</strong><small>Arrastre ${money.format(base.gardenCarryover)} + año ${money.format(base.gardenAnnual)}</small></article>
+    <article><span>Presupuesto Sala cuna</span><strong>${money.format(base.nurseryAnnual)}</strong><small>Ejercicio ${yearData.year}</small></article>
+    <article><span>Pago excepcional</span><strong>${money.format(base.exceptionalAnnual)}</strong><small>Sala cuna en dinero</small></article>
+    <article><span>Total base ${yearData.year}</span><strong>${money.format(simulationTotal(base))}</strong><small>${scenarios.length} escenario${scenarios.length === 1 ? "" : "s"}</small></article>
+  `;
+
+  document.querySelector("#simulationComparisonRows").innerHTML = scenarios.map((scenario) => `
+    <tr>
+      <th><strong>${simulationEscape(scenario.name)}</strong><small>Jardín ${simulationUfLabel(scenario.gardenUf, "sin valor UF")} · Sala cuna ${simulationUfLabel(scenario.nurseryUf, "factura real")}</small></th>
+      <td>${money.format(scenario.gardenCarryover)}</td>
+      <td>${money.format(scenario.gardenAnnual)}</td>
+      <td>${money.format(scenario.nurseryAnnual)}</td>
+      <td>${money.format(scenario.exceptionalAnnual)}</td>
+      <td><strong>${money.format(simulationTotal(scenario))}</strong></td>
+    </tr>
+  `).join("");
+
+  document.querySelector("#simulationScenarioList").innerHTML = scenarios.map((scenario, index) => `
+    <article class="simulation-scenario" data-scenario-id="${simulationEscape(scenario.id)}">
+      <div class="simulation-scenario-heading">
+        <div>
+          <span>Escenario ${index + 1}</span>
+          <strong>${simulationEscape(scenario.name)}</strong>
+        </div>
+        <div class="actions">
+          <button class="button secondary simulation-duplicate" type="button">Duplicar</button>
+          <button class="button ghost simulation-delete" type="button" ${scenarios.length === 1 ? "disabled" : ""}>Eliminar</button>
+        </div>
+      </div>
+      <div class="simulation-fields">
+        <label class="simulation-name-field">Nombre del escenario<input data-field="name" type="text" value="${simulationEscape(scenario.name)}" /></label>
+        <label>Jardín: arrastre<input data-field="gardenCarryover" type="number" min="0" step="1" value="${scenario.gardenCarryover}" /></label>
+        <label>Jardín: presupuesto del año<input data-field="gardenAnnual" type="number" min="0" step="1" value="${scenario.gardenAnnual}" /></label>
+        <label>Sala cuna<input data-field="nurseryAnnual" type="number" min="0" step="1" value="${scenario.nurseryAnnual}" /></label>
+        <label>Pago excepcional Sala cuna<input data-field="exceptionalAnnual" type="number" min="0" step="1" value="${scenario.exceptionalAnnual}" /></label>
+        <label>Valor propuesto Jardín (UF)<input data-field="gardenUf" type="number" min="0" step="0.1" value="${scenario.gardenUf}" /></label>
+        <label>Valor propuesto Sala cuna (UF)<input data-field="nurseryUf" type="number" min="0" step="0.1" value="${scenario.nurseryUf}" /></label>
+        <label class="simulation-notes-field">Observación<input data-field="notes" type="text" value="${simulationEscape(scenario.notes)}" /></label>
+      </div>
+      <div class="simulation-scenario-total"><span>Total del escenario</span><strong>${money.format(simulationTotal(scenario))}</strong></div>
+    </article>
+  `).join("");
+}
+
+function exportAnnualSimulationCsv() {
+  const yearData = selectedSimulationYearData();
+  if (!yearData) return;
+  const rows = [
+    ["Año", "Escenario", "Jardín arrastre", "Jardín año", "Sala cuna", "Pago excepcional Sala cuna", "Jardín UF", "Sala cuna UF", "Total", "Observación"],
+    ...yearData.scenarios.map((scenario) => [
+      yearData.year, scenario.name, scenario.gardenCarryover, scenario.gardenAnnual,
+      scenario.nurseryAnnual, scenario.exceptionalAnnual, scenario.gardenUf,
+      scenario.nurseryUf, simulationTotal(scenario), scenario.notes,
+    ]),
+  ];
+  const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\r\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `simulaciones_presupuesto_${yearData.year}_${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function renderAll() {
   const pagePosition = { left: window.scrollX, top: window.scrollY };
   providerExpenseCache = new Map();
@@ -3203,6 +3418,7 @@ function renderAll() {
   renderPaymentRule();
   renderSummary();
   renderBulkDocuments();
+  renderAnnualSimulations();
   cleanVisibleText();
   restorePagePositionUnlessUserMoved(pagePosition);
 }
@@ -3547,6 +3763,7 @@ function backupData() {
     projectionPaidGrid,
     noPaymentGrid,
     providers,
+    annualSimulations,
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8;" });
   const link = document.createElement("a");
@@ -4126,6 +4343,92 @@ document.querySelector("#clearBulkDocuments").addEventListener("click", () => {
   document.querySelector("#documentFile").value = "";
   renderBulkDocuments();
 });
+document.querySelector("#simulationYearSelect")?.addEventListener("change", (event) => {
+  annualSimulations.selectedYear = Number(event.target.value);
+  saveAnnualSimulations();
+  renderAnnualSimulations();
+});
+document.querySelector("#toggleSimulationYearForm")?.addEventListener("click", () => {
+  const form = document.querySelector("#simulationYearForm");
+  form.hidden = !form.hidden;
+  if (!form.hidden) document.querySelector("#simulationNewYear").focus();
+});
+document.querySelector("#cancelSimulationYear")?.addEventListener("click", () => {
+  document.querySelector("#simulationYearForm").hidden = true;
+});
+document.querySelector("#simulationYearForm")?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const year = Math.round(Number(document.querySelector("#simulationNewYear").value));
+  if (!Number.isFinite(year) || year < 2026 || year > 2100) return;
+  if (annualSimulations.years[year]) {
+    alert(`El año ${year} ya existe.`);
+    return;
+  }
+  const sourceYear = document.querySelector("#simulationCloneYear").value;
+  let scenarios;
+  if (sourceYear !== "blank" && annualSimulations.years[sourceYear]) {
+    scenarios = cloneJson(annualSimulations.years[sourceYear].scenarios).map((scenario) => ({
+      ...scenario,
+      id: `${year}-${newId()}`,
+    }));
+  } else {
+    scenarios = [normalizeSimulationScenario({ name: "Montos actuales" }, year)];
+  }
+  annualSimulations.years[year] = { year, scenarios };
+  annualSimulations.selectedYear = year;
+  saveAnnualSimulations();
+  event.target.reset();
+  event.target.hidden = true;
+  renderAnnualSimulations();
+});
+document.querySelector("#addSimulationScenario")?.addEventListener("click", () => {
+  const yearData = selectedSimulationYearData();
+  if (!yearData) return;
+  const source = yearData.scenarios[0] || {};
+  yearData.scenarios.push(normalizeSimulationScenario({
+    ...cloneJson(source),
+    id: `${yearData.year}-${newId()}`,
+    name: `Nuevo escenario ${yearData.scenarios.length + 1}`,
+    notes: "",
+  }, yearData.year));
+  saveAnnualSimulations();
+  renderAnnualSimulations();
+});
+document.querySelector("#simulationScenarioList")?.addEventListener("change", (event) => {
+  const input = event.target.closest("[data-field]");
+  const card = event.target.closest("[data-scenario-id]");
+  const yearData = selectedSimulationYearData();
+  if (!input || !card || !yearData) return;
+  const scenario = yearData.scenarios.find((item) => item.id === card.dataset.scenarioId);
+  if (!scenario) return;
+  const numericFields = new Set(["gardenCarryover", "gardenAnnual", "nurseryAnnual", "exceptionalAnnual", "gardenUf", "nurseryUf"]);
+  scenario[input.dataset.field] = numericFields.has(input.dataset.field)
+    ? Math.max(0, Number(input.value || 0))
+    : input.value.trim();
+  saveAnnualSimulations();
+  renderAnnualSimulations();
+});
+document.querySelector("#simulationScenarioList")?.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-scenario-id]");
+  const yearData = selectedSimulationYearData();
+  if (!card || !yearData) return;
+  const index = yearData.scenarios.findIndex((item) => item.id === card.dataset.scenarioId);
+  if (index < 0) return;
+  if (event.target.closest(".simulation-duplicate")) {
+    const copy = cloneJson(yearData.scenarios[index]);
+    copy.id = `${yearData.year}-${newId()}`;
+    copy.name = `${copy.name} (copia)`;
+    yearData.scenarios.splice(index + 1, 0, copy);
+  } else if (event.target.closest(".simulation-delete")) {
+    if (yearData.scenarios.length === 1 || !confirm(`¿Eliminar el escenario "${yearData.scenarios[index].name}"?`)) return;
+    yearData.scenarios.splice(index, 1);
+  } else {
+    return;
+  }
+  saveAnnualSimulations();
+  renderAnnualSimulations();
+});
+document.querySelector("#downloadSimulationCsv")?.addEventListener("click", exportAnnualSimulationCsv);
 document.querySelector("#budgetBaseRows")?.addEventListener("change", (event) => {
   const input = event.target.closest(".budget-month-input");
   if (!input) return;
