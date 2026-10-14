@@ -3364,6 +3364,31 @@ function simulationUfLabel(value, fallback) {
   return rate > 0 ? `${rate.toLocaleString("es-CL")} UF` : fallback;
 }
 
+function simulationBalanceLabel(balance) {
+  return balance >= 0 ? `Quedan ${money.format(balance)}` : `Faltan ${money.format(Math.abs(balance))}`;
+}
+
+function simulationBudgetRow(label, spending, budget, tone) {
+  const percent = budget > 0 ? Math.round(spending / budget * 100) : (spending > 0 ? 100 : 0);
+  const balance = budget - spending;
+  return `
+    <div class="scenario-budget-row">
+      <div class="scenario-budget-heading">
+        <strong>${label}</strong>
+        <span class="${balance < 0 ? "is-over" : "is-available"}">${simulationBalanceLabel(balance)}</span>
+      </div>
+      <div class="scenario-budget-values">
+        <span>Gasto <strong>${money.format(spending)}</strong></span>
+        <span>Presupuesto <strong>${money.format(budget)}</strong></span>
+      </div>
+      <div class="scenario-budget-track" aria-label="${percent}% del presupuesto utilizado">
+        <span class="${tone} ${balance < 0 ? "is-over" : ""}" style="width:${Math.min(100, Math.max(0, percent))}%"></span>
+      </div>
+      <small>${percent}% utilizado</small>
+    </div>
+  `;
+}
+
 function selectedSimulationYearData() {
   const year = Number(annualSimulations.selectedYear);
   return annualSimulations.years[year] || null;
@@ -3447,6 +3472,34 @@ function renderAnnualSimulations() {
         <td>${money.format(budget)}</td>
         <td class="${balance < 0 ? "simulation-negative" : "simulation-positive"}"><strong>${money.format(balance)}</strong></td>
       </tr>
+    `;
+  }).join("");
+
+  document.querySelector("#simulationScenarioVisuals").innerHTML = scenarios.map((scenario) => {
+    const spending = simulationSpending(scenario, assumptions);
+    const gardenBudget = Number(scenario.gardenCarryover || 0) + Number(scenario.gardenAnnual || 0);
+    const nurseryBudget = Number(scenario.nurseryAnnual || 0);
+    const directBudget = Number(scenario.exceptionalAnnual || 0);
+    const totalBudgetValue = gardenBudget + nurseryBudget + directBudget;
+    const totalBalance = totalBudgetValue - spending.total;
+    return `
+      <article class="scenario-visual-card">
+        <header>
+          <div>
+            <span>Escenario ${simulationEscape(scenario.name)}</span>
+            <strong>Gasto total ${money.format(spending.total)}</strong>
+          </div>
+          <div class="scenario-total-status ${totalBalance < 0 ? "is-over" : "is-available"}">
+            <small>Presupuesto ${money.format(totalBudgetValue)}</small>
+            <strong>${simulationBalanceLabel(totalBalance)}</strong>
+          </div>
+        </header>
+        <div class="scenario-budget-list">
+          ${simulationBudgetRow("Jardín infantil", spending.garden, gardenBudget, "garden")}
+          ${simulationBudgetRow("Sala cuna", spending.nursery, nurseryBudget, "nursery")}
+          ${simulationBudgetRow("Pago excepcional", spending.direct, directBudget, "direct")}
+        </div>
+      </article>
     `;
   }).join("");
 

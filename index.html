@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Control Bienestar 2026</title>
-    <link rel="stylesheet" href="styles.css?v=20261014-3" />
+    <link rel="stylesheet" href="styles.css?v=20261014-4" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-labelledby="authTitle">
@@ -564,22 +564,26 @@
             <div id="simulationPeopleChart" class="simulation-people-chart"></div>
           </section>
           <div id="simulationYearSummary" class="simulation-summary"></div>
-          <div class="table-wrap simulation-comparison-wrap">
-            <table class="simulation-comparison">
-              <thead>
-                <tr>
-                  <th>Escenario</th>
-                  <th>Gasto Jardín</th>
-                  <th>Gasto Sala cuna</th>
-                  <th>Gasto monto directo</th>
-                  <th>Gasto total</th>
-                  <th>Presupuesto</th>
-                  <th>Saldo</th>
-                </tr>
-              </thead>
-              <tbody id="simulationComparisonRows"></tbody>
-            </table>
-          </div>
+          <div id="simulationScenarioVisuals" class="simulation-scenario-visuals"></div>
+          <details class="simulation-detail-table">
+            <summary>Ver tabla comparativa detallada</summary>
+            <div class="table-wrap simulation-comparison-wrap">
+              <table class="simulation-comparison">
+                <thead>
+                  <tr>
+                    <th>Escenario</th>
+                    <th>Gasto Jardín</th>
+                    <th>Gasto Sala cuna</th>
+                    <th>Gasto monto directo</th>
+                    <th>Gasto total</th>
+                    <th>Presupuesto</th>
+                    <th>Saldo</th>
+                  </tr>
+                </thead>
+                <tbody id="simulationComparisonRows"></tbody>
+              </table>
+            </div>
+          </details>
           <div id="simulationScenarioList" class="simulation-scenario-list"></div>
         </section>
 
@@ -642,6 +646,6 @@
       </main>
     </div>
     <input id="rowPdfAttachment" type="file" accept="application/pdf" hidden />
-    <script src="app.js?v=20261014-3"></script>
+    <script src="app.js?v=20261014-4"></script>
   </body>
 </html>

@@ -1589,6 +1589,80 @@ h2 { font-size: 2.15rem; line-height: 1.12; }
 .simulation-summary small { color: var(--muted); }
 .simulation-summary strong { font-size: 1.15rem; }
 
+.simulation-scenario-visuals {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.scenario-visual-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.scenario-visual-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  background: #f5f8f7;
+}
+
+.scenario-visual-card > header > div:first-child { display: grid; gap: 5px; }
+.scenario-visual-card > header span { color: var(--muted); font-size: 0.76rem; font-weight: 800; text-transform: uppercase; }
+.scenario-visual-card > header > div:first-child strong { font-size: 1.18rem; }
+.scenario-total-status { display: grid; gap: 4px; text-align: right; }
+.scenario-total-status small { color: var(--muted); }
+.scenario-total-status.is-over strong { color: var(--red); }
+.scenario-total-status.is-available strong { color: var(--green); }
+
+.scenario-budget-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.scenario-budget-row {
+  display: grid;
+  gap: 9px;
+  padding: 16px 18px;
+  border-right: 1px solid var(--line);
+}
+
+.scenario-budget-row:last-child { border-right: 0; }
+.scenario-budget-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.scenario-budget-heading > span { font-size: 0.75rem; font-weight: 800; text-align: right; }
+.scenario-budget-heading .is-over { color: var(--red); }
+.scenario-budget-heading .is-available { color: var(--green); }
+.scenario-budget-values { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; color: var(--muted); font-size: 0.78rem; }
+.scenario-budget-values span { display: grid; gap: 3px; }
+.scenario-budget-values strong { color: var(--ink); font-size: 0.92rem; }
+.scenario-budget-track { height: 14px; overflow: hidden; border-radius: 6px; background: #e5ece9; }
+.scenario-budget-track span { display: block; height: 100%; border-radius: inherit; }
+.scenario-budget-track .garden { background: var(--teal); }
+.scenario-budget-track .nursery { background: var(--blue); }
+.scenario-budget-track .direct { background: var(--gold); }
+.scenario-budget-track span.is-over { background: var(--red); }
+.scenario-budget-row > small { color: var(--muted); }
+
+.simulation-detail-table {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.simulation-detail-table > summary {
+  padding: 13px 15px;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.simulation-detail-table .table-wrap { margin-top: 0; padding: 0 12px 12px; }
+
 .simulation-comparison-wrap { margin-top: 16px; }
 .simulation-comparison { min-width: 980px; }
 .simulation-comparison th small { display: block; margin-top: 5px; color: var(--muted); font-weight: 600; }
@@ -1642,6 +1716,9 @@ h2 { font-size: 2.15rem; line-height: 1.12; }
   .simulation-assumption-fields { grid-template-columns: 1fr 1fr; }
   .simulation-year-form { grid-template-columns: 1fr 1fr; }
   .simulation-people-row { grid-template-columns: minmax(180px, 1fr) 1fr 138px; }
+  .scenario-budget-list { grid-template-columns: 1fr; }
+  .scenario-budget-row { border-right: 0; border-bottom: 1px solid var(--line); }
+  .scenario-budget-row:last-child { border-bottom: 0; }
 }
 
 @media (max-width: 680px) {
@@ -1655,4 +1732,7 @@ h2 { font-size: 2.15rem; line-height: 1.12; }
   .simulation-people-heading { align-items: flex-start; flex-direction: column; }
   .simulation-people-row { grid-template-columns: 1fr; }
   .simulation-people-stepper { justify-content: start; }
+  .scenario-visual-card > header { align-items: flex-start; flex-direction: column; }
+  .scenario-total-status { text-align: left; }
+  .scenario-budget-heading { align-items: flex-start; flex-direction: column; }
 }
