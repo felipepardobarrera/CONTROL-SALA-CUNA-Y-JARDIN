@@ -86,6 +86,16 @@ const DEFAULT_ANNUAL_SIMULATIONS = {
   years: {
     2027: {
       year: 2027,
+      assumptions: {
+        ufValue: 41295.46,
+        gardenCount: 15,
+        gardenPayments: 13,
+        nurseryCount: 5,
+        nurseryPayments: 13,
+        nurseryMonthly: 500000,
+        directCount: 8,
+        directPayments: 12,
+      },
       scenarios: [
         {
           id: "2027-montos-actuales",
@@ -95,8 +105,9 @@ const DEFAULT_ANNUAL_SIMULATIONS = {
           nurseryAnnual: 12560000,
           exceptionalAnnual: 33050000,
           gardenUf: 4.9,
-          nurseryUf: 0,
-          notes: "Escenario base para el ejercicio 2027.",
+          directUf: 0,
+          directMonthly: 357000,
+          notes: "Jardín 4,9 UF y monto directo de $357.000 mensuales.",
         },
         {
           id: "2027-subir-montos-1",
@@ -106,8 +117,9 @@ const DEFAULT_ANNUAL_SIMULATIONS = {
           nurseryAnnual: 12560000,
           exceptionalAnnual: 33050000,
           gardenUf: 5,
-          nurseryUf: 10,
-          notes: "Propuesta: Jardín 5,0 UF y Sala cuna 10,0 UF.",
+          directUf: 10,
+          directMonthly: 0,
+          notes: "Propuesta: Jardín 5,0 UF y monto directo 10,0 UF.",
         },
         {
           id: "2027-subir-montos-2",
@@ -117,8 +129,9 @@ const DEFAULT_ANNUAL_SIMULATIONS = {
           nurseryAnnual: 12560000,
           exceptionalAnnual: 33050000,
           gardenUf: 5.5,
-          nurseryUf: 11,
-          notes: "Propuesta: Jardín 5,5 UF y Sala cuna 11,0 UF.",
+          directUf: 11,
+          directMonthly: 0,
+          notes: "Propuesta: Jardín 5,5 UF y monto directo 11,0 UF.",
         },
       ],
     },
@@ -298,6 +311,8 @@ function normalizeSimulationScenario(scenario, year) {
   const source = scenario && typeof scenario === "object" ? scenario : {};
   const amount = (key) => Math.max(0, Math.round(Number(source[key] || 0)));
   const rate = (key) => Math.max(0, Number(source[key] || 0));
+  const directUf = Math.max(0, Number(source.directUf ?? source.nurseryUf ?? 0));
+  const legacyCurrentScenario = directUf === 0 && /montos actuales/i.test(String(source.name || ""));
   return {
     id: String(source.id || `${year}-${newId()}`),
     name: String(source.name || "Nuevo escenario"),
@@ -306,8 +321,27 @@ function normalizeSimulationScenario(scenario, year) {
     nurseryAnnual: amount("nurseryAnnual"),
     exceptionalAnnual: amount("exceptionalAnnual"),
     gardenUf: rate("gardenUf"),
-    nurseryUf: rate("nurseryUf"),
+    directUf,
+    directMonthly: source.directMonthly == null && legacyCurrentScenario ? 357000 : amount("directMonthly"),
     notes: String(source.notes || ""),
+  };
+}
+
+function normalizeSimulationAssumptions(value = {}) {
+  const number = (key, fallback, integer = true) => {
+    const parsed = Number(value[key] ?? fallback);
+    const safe = Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+    return integer ? Math.round(safe) : safe;
+  };
+  return {
+    ufValue: number("ufValue", 41295.46, false),
+    gardenCount: number("gardenCount", 15),
+    gardenPayments: number("gardenPayments", 13),
+    nurseryCount: number("nurseryCount", 5),
+    nurseryPayments: number("nurseryPayments", 13),
+    nurseryMonthly: number("nurseryMonthly", 500000),
+    directCount: number("directCount", 8),
+    directPayments: number("directPayments", 12),
   };
 }
 
@@ -321,7 +355,11 @@ function normalizeAnnualSimulations(value) {
     const scenarios = Array.isArray(entry?.scenarios)
       ? entry.scenarios.map((scenario) => normalizeSimulationScenario(scenario, year))
       : [];
-    years[year] = { year, scenarios: scenarios.length ? scenarios : [normalizeSimulationScenario({}, year)] };
+    years[year] = {
+      year,
+      assumptions: normalizeSimulationAssumptions(entry?.assumptions),
+      scenarios: scenarios.length ? scenarios : [normalizeSimulationScenario({}, year)],
+    };
   });
   if (!Object.keys(years).length) return fallback;
   const selected = Number(value.selectedYear);
@@ -3304,6 +3342,23 @@ function simulationTotal(scenario) {
     + Number(scenario.exceptionalAnnual || 0);
 }
 
+function simulationSpending(scenario, assumptions) {
+  const garden = Math.round(Number(assumptions.gardenCount || 0)
+    * Number(assumptions.gardenPayments || 0)
+    * Number(scenario.gardenUf || 0)
+    * Number(assumptions.ufValue || 0));
+  const nursery = Math.round(Number(assumptions.nurseryCount || 0)
+    * Number(assumptions.nurseryPayments || 0)
+    * Number(assumptions.nurseryMonthly || 0));
+  const directMonthly = Number(scenario.directUf || 0) > 0
+    ? Number(scenario.directUf) * Number(assumptions.ufValue || 0)
+    : Number(scenario.directMonthly || 0);
+  const direct = Math.round(Number(assumptions.directCount || 0)
+    * Number(assumptions.directPayments || 0)
+    * directMonthly);
+  return { garden, nursery, direct, total: garden + nursery + direct };
+}
+
 function simulationUfLabel(value, fallback) {
   const rate = Number(value || 0);
   return rate > 0 ? `${rate.toLocaleString("es-CL")} UF` : fallback;
@@ -3330,6 +3385,8 @@ function renderAnnualSimulations() {
 
   const yearData = selectedSimulationYearData();
   if (!yearData) return;
+  yearData.assumptions = normalizeSimulationAssumptions(yearData.assumptions);
+  const assumptions = yearData.assumptions;
   const scenarios = yearData.scenarios;
   const base = scenarios[0];
   const baseGarden = Number(base.gardenCarryover || 0) + Number(base.gardenAnnual || 0);
@@ -3341,16 +3398,33 @@ function renderAnnualSimulations() {
     <article><span>Total base ${yearData.year}</span><strong>${money.format(simulationTotal(base))}</strong><small>${scenarios.length} escenario${scenarios.length === 1 ? "" : "s"}</small></article>
   `;
 
-  document.querySelector("#simulationComparisonRows").innerHTML = scenarios.map((scenario) => `
-    <tr>
-      <th><strong>${simulationEscape(scenario.name)}</strong><small>Jardín ${simulationUfLabel(scenario.gardenUf, "sin valor UF")} · Sala cuna ${simulationUfLabel(scenario.nurseryUf, "factura real")}</small></th>
-      <td>${money.format(scenario.gardenCarryover)}</td>
-      <td>${money.format(scenario.gardenAnnual)}</td>
-      <td>${money.format(scenario.nurseryAnnual)}</td>
-      <td>${money.format(scenario.exceptionalAnnual)}</td>
-      <td><strong>${money.format(simulationTotal(scenario))}</strong></td>
-    </tr>
-  `).join("");
+  document.querySelector("#simulationAssumptionFields").innerHTML = `
+    <label>UF utilizada<input data-assumption="ufValue" type="number" min="0" step="0.01" value="${assumptions.ufValue}" /></label>
+    <label>Cantidad de jardines<input data-assumption="gardenCount" type="number" min="0" step="1" value="${assumptions.gardenCount}" /></label>
+    <label>Pagos por jardín<input data-assumption="gardenPayments" type="number" min="0" step="1" value="${assumptions.gardenPayments}" /></label>
+    <label>Cantidad de salas cuna<input data-assumption="nurseryCount" type="number" min="0" step="1" value="${assumptions.nurseryCount}" /></label>
+    <label>Pagos por sala cuna<input data-assumption="nurseryPayments" type="number" min="0" step="1" value="${assumptions.nurseryPayments}" /></label>
+    <label>Pago mensual Sala cuna<input data-assumption="nurseryMonthly" type="number" min="0" step="1" value="${assumptions.nurseryMonthly}" /></label>
+    <label>Funcionarias monto directo<input data-assumption="directCount" type="number" min="0" step="1" value="${assumptions.directCount}" /></label>
+    <label>Pagos de monto directo<input data-assumption="directPayments" type="number" min="0" step="1" value="${assumptions.directPayments}" /></label>
+  `;
+
+  document.querySelector("#simulationComparisonRows").innerHTML = scenarios.map((scenario) => {
+    const spending = simulationSpending(scenario, assumptions);
+    const budget = simulationTotal(scenario);
+    const balance = budget - spending.total;
+    return `
+      <tr>
+        <th><strong>${simulationEscape(scenario.name)}</strong><small>Jardín ${simulationUfLabel(scenario.gardenUf, "sin valor UF")} · Monto directo ${simulationUfLabel(scenario.directUf, money.format(scenario.directMonthly))}</small></th>
+        <td>${money.format(spending.garden)}</td>
+        <td>${money.format(spending.nursery)}</td>
+        <td>${money.format(spending.direct)}</td>
+        <td><strong>${money.format(spending.total)}</strong></td>
+        <td>${money.format(budget)}</td>
+        <td class="${balance < 0 ? "simulation-negative" : "simulation-positive"}"><strong>${money.format(balance)}</strong></td>
+      </tr>
+    `;
+  }).join("");
 
   document.querySelector("#simulationScenarioList").innerHTML = scenarios.map((scenario, index) => `
     <article class="simulation-scenario" data-scenario-id="${simulationEscape(scenario.id)}">
@@ -3371,10 +3445,11 @@ function renderAnnualSimulations() {
         <label>Sala cuna<input data-field="nurseryAnnual" type="number" min="0" step="1" value="${scenario.nurseryAnnual}" /></label>
         <label>Pago excepcional Sala cuna<input data-field="exceptionalAnnual" type="number" min="0" step="1" value="${scenario.exceptionalAnnual}" /></label>
         <label>Valor propuesto Jardín (UF)<input data-field="gardenUf" type="number" min="0" step="0.1" value="${scenario.gardenUf}" /></label>
-        <label>Valor propuesto Sala cuna (UF)<input data-field="nurseryUf" type="number" min="0" step="0.1" value="${scenario.nurseryUf}" /></label>
+        <label>Monto directo (UF; 0 usa monto fijo)<input data-field="directUf" type="number" min="0" step="0.1" value="${scenario.directUf}" /></label>
+        <label>Monto directo mensual fijo<input data-field="directMonthly" type="number" min="0" step="1" value="${scenario.directMonthly}" /></label>
         <label class="simulation-notes-field">Observación<input data-field="notes" type="text" value="${simulationEscape(scenario.notes)}" /></label>
       </div>
-      <div class="simulation-scenario-total"><span>Total del escenario</span><strong>${money.format(simulationTotal(scenario))}</strong></div>
+      <div class="simulation-scenario-total"><span>Gasto calculado / presupuesto</span><strong>${money.format(simulationSpending(scenario, assumptions).total)} / ${money.format(simulationTotal(scenario))}</strong></div>
     </article>
   `).join("");
 }
@@ -3383,12 +3458,20 @@ function exportAnnualSimulationCsv() {
   const yearData = selectedSimulationYearData();
   if (!yearData) return;
   const rows = [
-    ["Año", "Escenario", "Jardín arrastre", "Jardín año", "Sala cuna", "Pago excepcional Sala cuna", "Jardín UF", "Sala cuna UF", "Total", "Observación"],
-    ...yearData.scenarios.map((scenario) => [
-      yearData.year, scenario.name, scenario.gardenCarryover, scenario.gardenAnnual,
-      scenario.nurseryAnnual, scenario.exceptionalAnnual, scenario.gardenUf,
-      scenario.nurseryUf, simulationTotal(scenario), scenario.notes,
-    ]),
+    ["Año", "Escenario", "UF utilizada", "Jardines", "Pagos Jardín", "Jardín UF", "Gasto Jardín", "Salas cuna", "Pagos Sala cuna", "Pago mensual Sala cuna", "Gasto Sala cuna", "Funcionarias monto directo", "Pagos monto directo", "Monto directo UF", "Monto directo fijo", "Gasto monto directo", "Gasto total", "Presupuesto", "Saldo", "Observación"],
+    ...yearData.scenarios.map((scenario) => {
+      const assumptions = yearData.assumptions;
+      const spending = simulationSpending(scenario, assumptions);
+      const budget = simulationTotal(scenario);
+      return [
+        yearData.year, scenario.name, assumptions.ufValue, assumptions.gardenCount,
+        assumptions.gardenPayments, scenario.gardenUf, spending.garden,
+        assumptions.nurseryCount, assumptions.nurseryPayments, assumptions.nurseryMonthly,
+        spending.nursery, assumptions.directCount, assumptions.directPayments,
+        scenario.directUf, scenario.directMonthly, spending.direct, spending.total,
+        budget, budget - spending.total, scenario.notes,
+      ];
+    }),
   ];
   const csv = rows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\r\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -4366,15 +4449,18 @@ document.querySelector("#simulationYearForm")?.addEventListener("submit", (event
   }
   const sourceYear = document.querySelector("#simulationCloneYear").value;
   let scenarios;
+  let assumptions;
   if (sourceYear !== "blank" && annualSimulations.years[sourceYear]) {
     scenarios = cloneJson(annualSimulations.years[sourceYear].scenarios).map((scenario) => ({
       ...scenario,
       id: `${year}-${newId()}`,
     }));
+    assumptions = normalizeSimulationAssumptions(cloneJson(annualSimulations.years[sourceYear].assumptions));
   } else {
     scenarios = [normalizeSimulationScenario({ name: "Montos actuales" }, year)];
+    assumptions = normalizeSimulationAssumptions();
   }
-  annualSimulations.years[year] = { year, scenarios };
+  annualSimulations.years[year] = { year, assumptions, scenarios };
   annualSimulations.selectedYear = year;
   saveAnnualSimulations();
   event.target.reset();
@@ -4401,10 +4487,21 @@ document.querySelector("#simulationScenarioList")?.addEventListener("change", (e
   if (!input || !card || !yearData) return;
   const scenario = yearData.scenarios.find((item) => item.id === card.dataset.scenarioId);
   if (!scenario) return;
-  const numericFields = new Set(["gardenCarryover", "gardenAnnual", "nurseryAnnual", "exceptionalAnnual", "gardenUf", "nurseryUf"]);
+  const numericFields = new Set(["gardenCarryover", "gardenAnnual", "nurseryAnnual", "exceptionalAnnual", "gardenUf", "directUf", "directMonthly"]);
   scenario[input.dataset.field] = numericFields.has(input.dataset.field)
     ? Math.max(0, Number(input.value || 0))
     : input.value.trim();
+  saveAnnualSimulations();
+  renderAnnualSimulations();
+});
+document.querySelector("#simulationAssumptionFields")?.addEventListener("change", (event) => {
+  const input = event.target.closest("[data-assumption]");
+  const yearData = selectedSimulationYearData();
+  if (!input || !yearData) return;
+  yearData.assumptions = normalizeSimulationAssumptions({
+    ...yearData.assumptions,
+    [input.dataset.assumption]: Math.max(0, Number(input.value || 0)),
+  });
   saveAnnualSimulations();
   renderAnnualSimulations();
 });

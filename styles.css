@@ -1477,6 +1477,35 @@ h2 { font-size: 2.15rem; line-height: 1.12; }
   font-size: 0.86rem;
 }
 
+.simulation-assumptions {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.simulation-assumptions > summary {
+  padding: 13px 15px;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.simulation-assumption-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 0 15px 15px;
+}
+
+.simulation-assumption-fields label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
 .simulation-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1501,6 +1530,8 @@ h2 { font-size: 2.15rem; line-height: 1.12; }
 .simulation-comparison { min-width: 980px; }
 .simulation-comparison th small { display: block; margin-top: 5px; color: var(--muted); font-weight: 600; }
 .simulation-comparison td { white-space: nowrap; }
+.simulation-negative { color: var(--red); }
+.simulation-positive { color: var(--green); }
 
 .simulation-scenario-list {
   display: grid;
@@ -1544,13 +1575,15 @@ h2 { font-size: 2.15rem; line-height: 1.12; }
 
 @media (max-width: 1050px) {
   .simulation-summary,
-  .simulation-fields { grid-template-columns: 1fr 1fr; }
+  .simulation-fields,
+  .simulation-assumption-fields { grid-template-columns: 1fr 1fr; }
   .simulation-year-form { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 680px) {
   .simulation-summary,
   .simulation-fields,
+  .simulation-assumption-fields,
   .simulation-year-form { grid-template-columns: 1fr; }
   .simulation-name-field,
   .simulation-notes-field { grid-column: span 1; }

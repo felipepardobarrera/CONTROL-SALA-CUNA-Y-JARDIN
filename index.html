@@ -7,7 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>Control Bienestar 2026</title>
-    <link rel="stylesheet" href="styles.css?v=20261014-1" />
+    <link rel="stylesheet" href="styles.css?v=20261014-2" />
   </head>
   <body class="auth-pending">
     <section id="authGate" class="auth-gate" aria-labelledby="authTitle">
@@ -549,17 +549,22 @@
           <div class="simulation-notice" role="note">
             Los escenarios se guardan de forma compartida, pero no cambian pagos, proveedores, presupuesto base ni proyecciones del año vigente.
           </div>
+          <details class="simulation-assumptions" open>
+            <summary>Supuestos de cálculo del año</summary>
+            <div id="simulationAssumptionFields" class="simulation-assumption-fields"></div>
+          </details>
           <div id="simulationYearSummary" class="simulation-summary"></div>
           <div class="table-wrap simulation-comparison-wrap">
             <table class="simulation-comparison">
               <thead>
                 <tr>
                   <th>Escenario</th>
-                  <th>Jardín arrastre</th>
-                  <th>Jardín año</th>
-                  <th>Sala cuna</th>
-                  <th>Pago excepcional</th>
-                  <th>Total</th>
+                  <th>Gasto Jardín</th>
+                  <th>Gasto Sala cuna</th>
+                  <th>Gasto monto directo</th>
+                  <th>Gasto total</th>
+                  <th>Presupuesto</th>
+                  <th>Saldo</th>
                 </tr>
               </thead>
               <tbody id="simulationComparisonRows"></tbody>
@@ -627,6 +632,6 @@
       </main>
     </div>
     <input id="rowPdfAttachment" type="file" accept="application/pdf" hidden />
-    <script src="app.js?v=20261014-1"></script>
+    <script src="app.js?v=20261014-2"></script>
   </body>
 </html>
